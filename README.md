@@ -1,2 +1,2 @@
 # rathod-mart-admin
-admin pannal 
+this is complete code of frontend and backend (rathod mart admin pannal)
