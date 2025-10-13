@@ -1,3 +1,5 @@
+// backend/controllers/inventoryController.js
+
 import mongoose from "mongoose";
 import InventoryLedger from "../models/InventoryLedger.js";
 import Product from "../models/Product.js";

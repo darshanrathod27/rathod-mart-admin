@@ -1,3 +1,5 @@
+// backend/controllers/productController.js
+
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import InventoryLedger from "../models/InventoryLedger.js";

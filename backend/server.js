@@ -38,7 +38,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-// FIXED: Temporarily disabled rate limiter to prevent 429 errors during development.
+// Rate limiter is temporarily disabled for development.
 /*
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -47,19 +47,24 @@ const limiter = rateLimit({
 app.use(limiter);
 */
 
-// Static files
+// Static files for serving uploaded images
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // API routes
 app.use("/api/users", userRoutes);
 app.use("/api/categories", categoryRoutes);
-app.use("/api/products", productRoutes, productImageRoutes);
+
+// --- CORRECTED ROUTE MOUNTING ---
+// Each router must be mounted in a separate app.use() call.
+app.use("/api/products", productRoutes);
+app.use("/api/products", productImageRoutes); // This now correctly handles image-related routes.
+
 app.use("/api/product-size-mapping", productSizeMappingRoutes);
 app.use("/api/product-color-mapping", productColorMappingRoutes);
 app.use("/api/variant-master", variantMasterRoutes);
 app.use("/api/inventory", inventoryRoutes);
 
-// Health check
+// Health check endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -68,7 +73,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Error handling
+// Error handling middleware (should be last)
 app.use(notFound);
 app.use(errorHandler);
 

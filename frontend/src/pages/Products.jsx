@@ -1,3 +1,5 @@
+// frontend/src/pages/Products.jsx
+
 import React, { useState, useEffect, useCallback } from "react";
 import { productService } from "../services/productService";
 import { categoryService } from "../services/categoryService";
