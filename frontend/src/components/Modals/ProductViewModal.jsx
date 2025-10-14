@@ -1,4 +1,6 @@
-import React from "react";
+// frontend/src/components/Modals/ProductViewModal.jsx
+
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -14,8 +16,14 @@ import {
   Paper,
   Stack,
 } from "@mui/material";
-import { Close, Event, Update } from "@mui/icons-material";
-import { motion } from "framer-motion";
+import {
+  Close,
+  Event,
+  Update,
+  ArrowBackIosNew,
+  ArrowForwardIos,
+} from "@mui/icons-material";
+import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -25,13 +33,13 @@ const InfoRow = ({ label, value, children }) => (
     direction="row"
     justifyContent="space-between"
     alignItems="center"
-    sx={{ py: 1, px: 1 }}
+    sx={{ py: 1.5 }}
   >
     <Typography variant="body2" color="text.secondary">
       {label}
     </Typography>
     {children || (
-      <Typography variant="body1" fontWeight="500" align="right" noWrap>
+      <Typography variant="body1" fontWeight={600} align="right">
         {value || "N/A"}
       </Typography>
     )}
@@ -39,49 +47,42 @@ const InfoRow = ({ label, value, children }) => (
 );
 
 const ProductViewModal = ({ open, onClose, product }) => {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  useEffect(() => {
+    if (product) {
+      const primaryIndex = product.images?.findIndex((img) => img.isPrimary);
+      setCurrentImageIndex(primaryIndex > -1 ? primaryIndex : 0);
+    }
+  }, [product]);
+
   if (!product) return null;
 
-  const getStockColor = (stock) => {
-    if (stock === 0) return "error";
-    if (stock <= 10) return "warning";
-    return "success";
-  };
+  const images = product.images || [];
 
-  const getStockText = (stock) => {
-    if (stock === 0) return "Out of Stock";
-    if (stock <= 10) return "Low Stock";
-    return "In Stock";
-  };
+  const nextImage = () =>
+    setCurrentImageIndex((prev) => (prev + 1) % images.length);
+  const prevImage = () =>
+    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
 
-  // Correctly find the primary image or fall back to the first image.
-  const primaryImage =
-    product.images?.find((img) => img.isPrimary) || product.images?.[0];
-  const imageUrl = primaryImage
-    ? `${API_BASE_URL}${primaryImage.imageUrl}`
-    : "";
+  const getStockColor = (stock) =>
+    stock === 0 ? "error" : stock <= 10 ? "warning" : "success";
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      maxWidth="md"
+      maxWidth="lg"
       fullWidth
-      PaperProps={{
-        component: motion.div,
-        initial: { opacity: 0, y: 50 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: 50 },
-        transition: { duration: 0.3, ease: "easeInOut" },
-        sx: { borderRadius: 4, overflow: "hidden" },
-      }}
+      PaperProps={{ sx: { borderRadius: 4 } }}
     >
-      <DialogTitle sx={{ p: 2, pb: 1 }}>
+      <DialogTitle>
         <Stack
           direction="row"
           justifyContent="space-between"
           alignItems="center"
         >
-          <Typography variant="h5" fontWeight="600">
+          <Typography variant="h5" fontWeight={700} color="primary.dark">
             Product Details
           </Typography>
           <IconButton onClick={onClose}>
@@ -89,140 +90,220 @@ const ProductViewModal = ({ open, onClose, product }) => {
           </IconButton>
         </Stack>
       </DialogTitle>
-      <DialogContent sx={{ p: 3 }}>
-        <Grid container spacing={3} alignItems="center" sx={{ mb: 3 }}>
-          <Grid item>
-            <Avatar
-              src={imageUrl}
-              variant="rounded"
+      <DialogContent dividers sx={{ p: { xs: 2, sm: 3 } }}>
+        <Grid container spacing={4}>
+          {/* Image Gallery */}
+          <Grid item xs={12} md={5}>
+            <Paper
+              variant="outlined"
               sx={{
-                bgcolor: product.color || "#4CAF50",
-                width: 90,
-                height: 90,
-                fontSize: "3rem",
+                p: 2,
+                borderRadius: 3,
+                position: "relative",
+                overflow: "hidden",
+                height: "450px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {/* Show icon only if there is no image */}
-              {!primaryImage && (product.icon || "📦")}
-            </Avatar>
+              <AnimatePresence initial={false}>
+                {images.length > 0 ? (
+                  <motion.img
+                    key={currentImageIndex}
+                    src={`${API_BASE_URL}${images[currentImageIndex]?.imageUrl}`}
+                    alt={product.name}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    style={{
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                      objectFit: "contain",
+                    }}
+                  />
+                ) : (
+                  <Avatar
+                    variant="rounded"
+                    sx={{
+                      width: 200,
+                      height: 200,
+                      bgcolor: product.color || "grey.200",
+                      fontSize: "6rem",
+                    }}
+                  >
+                    {product.icon || "📦"}
+                  </Avatar>
+                )}
+              </AnimatePresence>
+              {images.length > 1 && (
+                <>
+                  <IconButton
+                    onClick={prevImage}
+                    sx={{
+                      position: "absolute",
+                      top: "50%",
+                      left: 8,
+                      transform: "translateY(-50%)",
+                      bgcolor: "rgba(255,255,255,0.7)",
+                    }}
+                  >
+                    <ArrowBackIosNew />
+                  </IconButton>
+                  <IconButton
+                    onClick={nextImage}
+                    sx={{
+                      position: "absolute",
+                      top: "50%",
+                      right: 8,
+                      transform: "translateY(-50%)",
+                      bgcolor: "rgba(255,255,255,0.7)",
+                    }}
+                  >
+                    <ArrowForwardIos />
+                  </IconButton>
+                </>
+              )}
+            </Paper>
+            {/* Thumbnail previews */}
+            <Stack
+              direction="row"
+              spacing={1.5}
+              justifyContent="center"
+              sx={{ mt: 2 }}
+            >
+              {images.map((img, index) => (
+                <Avatar
+                  key={img._id}
+                  src={`${API_BASE_URL}${img.imageUrl}`}
+                  variant="rounded"
+                  onClick={() => setCurrentImageIndex(index)}
+                  sx={{
+                    width: 60,
+                    height: 60,
+                    cursor: "pointer",
+                    border:
+                      index === currentImageIndex
+                        ? "3px solid"
+                        : "3px solid transparent",
+                    borderColor: "primary.main",
+                    opacity: index === currentImageIndex ? 1 : 0.6,
+                    transition: "all 0.3s",
+                  }}
+                />
+              ))}
+            </Stack>
           </Grid>
-          <Grid item xs>
-            <Typography variant="h3" component="h1" fontWeight="bold" noWrap>
+
+          {/* Product Details */}
+          <Grid item xs={12} md={7}>
+            <Chip
+              label={product.category?.name || "Uncategorized"}
+              sx={{
+                bgcolor: `${product.category?.color}20`,
+                color: product.category?.color,
+                mb: 1,
+              }}
+            />
+            <Typography variant="h4" component="h1" fontWeight="bold">
               {product.name}
             </Typography>
             <Stack
               direction="row"
               spacing={1}
               alignItems="center"
-              sx={{ mt: 1 }}
+              sx={{ mt: 1, mb: 2 }}
             >
-              {product.category && (
-                <Chip
-                  label={product.category.name}
-                  size="small"
-                  sx={{
-                    bgcolor: `${product.category.color}20`,
-                    color: product.category.color,
-                  }}
-                />
-              )}
-              <Chip
-                label={product.status}
-                size="small"
-                color={product.status === "Active" ? "success" : "warning"}
-                variant="outlined"
-              />
+              <Rating value={product.rating || 0} readOnly precision={0.5} />
+              <Typography variant="body2">({product.rating || 0}/5)</Typography>
+            </Stack>
+            <Typography variant="body1" color="text.secondary" paragraph>
+              {product.description}
+            </Typography>
+
+            <Grid container spacing={2} sx={{ mt: 2 }}>
+              <Grid item xs={12} sm={6}>
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Pricing
+                  </Typography>
+                  <InfoRow
+                    label="Original Price"
+                    value={`₹${product.originalPrice?.toLocaleString("en-IN")}`}
+                  />
+                  <Divider />
+                  <InfoRow
+                    label="Discount"
+                    value={`${product.discount || 0}%`}
+                  />
+                  <Divider />
+                  <InfoRow label="Final Price">
+                    <Typography
+                      variant="h4"
+                      color="primary.main"
+                      fontWeight="bold"
+                    >
+                      ₹{product.price.toLocaleString("en-IN")}
+                    </Typography>
+                  </InfoRow>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Inventory
+                  </Typography>
+                  <InfoRow
+                    label="Status"
+                    children={
+                      <Chip
+                        label={product.status}
+                        color={
+                          product.status === "Active" ? "success" : "warning"
+                        }
+                        size="small"
+                      />
+                    }
+                  />
+                  <Divider />
+                  <InfoRow
+                    label="Stock"
+                    children={
+                      <Chip
+                        label={`${product.stock} available`}
+                        color={getStockColor(product.stock)}
+                      />
+                    }
+                  />
+                  <Divider />
+                  <InfoRow label="SKU / ID" value={product.sku || "N/A"} />
+                </Paper>
+              </Grid>
+            </Grid>
+
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              sx={{ mt: 4, color: "text.secondary" }}
+            >
+              <Box display="flex" alignItems="center" gap={1}>
+                <Event fontSize="small" />
+                <Typography variant="caption">
+                  Created:{" "}
+                  {new Date(product.createdAt).toLocaleDateString("en-IN")}
+                </Typography>
+              </Box>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Update fontSize="small" />
+                <Typography variant="caption">
+                  Updated:{" "}
+                  {new Date(product.updatedAt).toLocaleDateString("en-IN")}
+                </Typography>
+              </Box>
             </Stack>
           </Grid>
         </Grid>
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={7}>
-            <Paper
-              variant="outlined"
-              sx={{ p: 2.5, borderRadius: 3, height: "100%" }}
-            >
-              <Typography variant="h6" gutterBottom>
-                Description
-              </Typography>
-              <Typography variant="body1" color="text.secondary" paragraph>
-                {product.description}
-              </Typography>
-              <Divider sx={{ my: 2 }} />
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography variant="body2" color="text.secondary">
-                  Rating:
-                </Typography>
-                <Rating value={product.rating || 0} readOnly />
-                <Typography variant="body2">
-                  ({product.rating || 0}/5)
-                </Typography>
-              </Stack>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} md={5}>
-            <Paper
-              variant="outlined"
-              sx={{ p: 2.5, borderRadius: 3, height: "100%" }}
-            >
-              <Typography variant="h6" gutterBottom>
-                Pricing & Stock
-              </Typography>
-              <InfoRow
-                label="Original Price"
-                value={`₹${new Intl.NumberFormat("en-IN").format(
-                  product.originalPrice || product.price
-                )}`}
-              />
-              <Divider component="div" />
-              <InfoRow label="Discount" value={`${product.discount || 0}%`} />
-              <Divider component="div" />
-              <InfoRow label="Final Price">
-                <Typography variant="h5" color="primary.main" fontWeight="bold">
-                  ₹{new Intl.NumberFormat("en-IN").format(product.price)}
-                </Typography>
-              </InfoRow>
-              <Divider sx={{ my: 1 }} />
-              <InfoRow label="Stock Status:">
-                <Chip
-                  label={getStockText(product.stock)}
-                  color={getStockColor(product.stock)}
-                  size="small"
-                />
-              </InfoRow>
-              <Divider component="div" />
-              <InfoRow label="Quantity Available:" value={product.stock} />
-            </Paper>
-          </Grid>
-          <Grid item xs={12}>
-            <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Business Details
-              </Typography>
-              <InfoRow label="Company" value={product.company} />
-              <Divider component="div" />
-              <InfoRow label="Origin" value={product.place} />
-              <Divider component="div" />
-            </Paper>
-          </Grid>
-        </Grid>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          sx={{ mt: 3, color: "text.secondary" }}
-        >
-          <Box display="flex" alignItems="center" gap={1}>
-            <Event fontSize="small" />
-            <Typography variant="caption">
-              Created: {new Date(product.createdAt).toLocaleDateString("en-IN")}
-            </Typography>
-          </Box>
-          <Box display="flex" alignItems="center" gap={1}>
-            <Update fontSize="small" />
-            <Typography variant="caption">
-              Updated: {new Date(product.updatedAt).toLocaleDateString("en-IN")}
-            </Typography>
-          </Box>
-        </Stack>
       </DialogContent>
     </Dialog>
   );
