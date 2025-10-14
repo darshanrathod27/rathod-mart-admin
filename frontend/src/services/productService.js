@@ -1,122 +1,79 @@
-import api from "./api";
+// frontend/src/services/productService.js
+import axios from "axios";
 
-export const productService = {
-  // Get all products with pagination and filters
-  getProducts: async (params = {}) => {
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_URL = `${API_BASE_URL}/api/products`;
+
+class ProductService {
+  // Get all products with enhanced filtering
+  async getProducts(params = {}) {
     try {
-      console.log("📡 API Call: GET /products", params);
-      const response = await api.get("/products", { params });
-      console.log("✅ Products response:", response.data);
+      const response = await axios.get(API_URL, { params });
       return response.data;
     } catch (error) {
-      console.error("❌ Get products error:", error);
+      console.error("Error fetching products:", error);
       throw error;
     }
-  },
+  }
 
-  // Get single product with full details including images
-  getProduct: async (id) => {
+  // Get single product with images
+  async getProduct(id) {
     try {
-      console.log("📡 API Call: GET /products/:id", id);
-      const response = await api.get(`/products/${id}`);
-      console.log("✅ Product details:", response.data);
+      const response = await axios.get(`${API_URL}/${id}`);
       return response.data;
     } catch (error) {
-      console.error("❌ Get product error:", error);
+      console.error("Error fetching product:", error);
       throw error;
     }
-  },
+  }
 
   // Create new product
-  createProduct: async (productData) => {
+  async createProduct(productData) {
     try {
-      console.log("📡 API Call: POST /products", productData);
-      const response = await api.post("/products", productData);
-      console.log("✅ Product created:", response.data);
-      return response.data;
-    } catch (error) {
-      console.error("❌ Create product error:", error);
-      throw error;
-    }
-  },
-
-  // Update existing product
-  updateProduct: async (id, productData) => {
-    try {
-      console.log("📡 API Call: PUT /products/:id", id, productData);
-      const response = await api.put(`/products/${id}`, productData);
-      console.log("✅ Product updated:", response.data);
-      return response.data;
-    } catch (error) {
-      console.error("❌ Update product error:", error);
-      throw error;
-    }
-  },
-
-  // Delete product (soft delete)
-  deleteProduct: async (id) => {
-    try {
-      console.log("📡 API Call: DELETE /products/:id", id);
-      const response = await api.delete(`/products/${id}`);
-      console.log("✅ Product deleted:", response.data);
-      return response.data;
-    } catch (error) {
-      console.error("❌ Delete product error:", error);
-      throw error;
-    }
-  },
-
-  // Get product statistics
-  getProductStats: async () => {
-    try {
-      console.log("📡 API Call: GET /products/stats");
-      const response = await api.get("/products/stats");
-      console.log("✅ Product stats:", response.data);
-      return response.data;
-    } catch (error) {
-      console.error("❌ Get product stats error:", error);
-      throw error;
-    }
-  },
-
-  // Get products by category
-  getProductsByCategory: async (categoryId, params = {}) => {
-    try {
-      console.log(
-        "📡 API Call: GET /products/category/:id",
-        categoryId,
-        params
-      );
-      const response = await api.get(`/products/category/${categoryId}`, {
-        params,
+      const response = await axios.post(API_URL, productData, {
+        headers: {
+          "Content-Type": "application/json",
+        },
       });
-      console.log("✅ Products by category:", response.data);
       return response.data;
     } catch (error) {
-      console.error("❌ Get products by category error:", error);
+      console.error("Error creating product:", error);
       throw error;
     }
-  },
+  }
 
-  // Get all images for a product
-  getProductImages: async (productId) => {
+  // Update product
+  async updateProduct(id, productData) {
     try {
-      console.log("📡 API Call: GET /products/:id/images", productId);
-      const response = await api.get(`/products/${productId}/images`);
-      console.log("✅ Product images:", response.data);
+      const response = await axios.put(`${API_URL}/${id}`, productData, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
       return response.data;
     } catch (error) {
-      console.error("❌ Get product images error:", error);
+      console.error("Error updating product:", error);
       throw error;
     }
-  },
+  }
 
-  // Upload product image
-  uploadProductImage: async (productId, formData) => {
+  // Delete product
+  async deleteProduct(id) {
     try {
-      console.log("📡 API Call: POST /products/:id/images", productId);
-      const response = await api.post(
-        `/products/${productId}/images`,
+      const response = await axios.delete(`${API_URL}/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting product:", error);
+      throw error;
+    }
+  }
+
+  // Upload single product image
+  async uploadProductImage(productId, formData) {
+    try {
+      const response = await axios.post(
+        `${API_URL}/${productId}/images`,
         formData,
         {
           headers: {
@@ -124,37 +81,83 @@ export const productService = {
           },
         }
       );
-      console.log("✅ Image uploaded:", response.data);
       return response.data;
     } catch (error) {
-      console.error("❌ Upload product image error:", error);
+      console.error("Error uploading image:", error);
       throw error;
     }
-  },
+  }
+
+  // Upload multiple product images
+  async uploadMultipleProductImages(productId, formData) {
+    try {
+      const response = await axios.post(
+        `${API_URL}/${productId}/images/multiple`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error uploading multiple images:", error);
+      throw error;
+    }
+  }
+
+  // Get product images
+  async getProductImages(productId) {
+    try {
+      const response = await axios.get(`${API_URL}/${productId}/images`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching product images:", error);
+      throw error;
+    }
+  }
+
+  // Update product image
+  async updateProductImage(imageId, updateData) {
+    try {
+      const response = await axios.put(
+        `${API_URL}/images/${imageId}`,
+        updateData,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error updating product image:", error);
+      throw error;
+    }
+  }
 
   // Delete product image
-  deleteProductImage: async (imageId) => {
+  async deleteProductImage(imageId) {
     try {
-      console.log("📡 API Call: DELETE /products/images/:id", imageId);
-      const response = await api.delete(`/products/images/${imageId}`);
-      console.log("✅ Image deleted:", response.data);
+      const response = await axios.delete(`${API_URL}/images/${imageId}`);
       return response.data;
     } catch (error) {
-      console.error("❌ Delete product image error:", error);
+      console.error("Error deleting product image:", error);
       throw error;
     }
-  },
+  }
 
-  // Update product image (e.g., set as primary)
-  updateProductImage: async (imageId, data) => {
+  // Get product statistics
+  async getProductStats() {
     try {
-      console.log("📡 API Call: PUT /products/images/:id", imageId, data);
-      const response = await api.put(`/products/images/${imageId}`, data);
-      console.log("✅ Image updated:", response.data);
+      const response = await axios.get(`${API_URL}/stats`);
       return response.data;
     } catch (error) {
-      console.error(" Update product image error:", error);
+      console.error("Error fetching product stats:", error);
       throw error;
     }
-  },
-};
+  }
+}
+
+export const productService = new ProductService();

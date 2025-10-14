@@ -1,3 +1,4 @@
+// backend/models/ProductImage.js - Enhanced model
 import mongoose from "mongoose";
 
 const productImageSchema = new mongoose.Schema(
@@ -11,13 +12,33 @@ const productImageSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    altText: {
+    fullImageUrl: {
       type: String,
-      trim: true,
+    },
+    fileName: {
+      type: String,
+      required: true,
+    },
+    originalName: {
+      type: String,
+    },
+    mimeType: {
+      type: String,
+    },
+    size: {
+      type: Number,
     },
     isPrimary: {
       type: Boolean,
       default: false,
+    },
+    altText: {
+      type: String,
+      default: "",
+    },
+    sortOrder: {
+      type: Number,
+      default: 0,
     },
   },
   {
@@ -25,6 +46,7 @@ const productImageSchema = new mongoose.Schema(
   }
 );
 
-const ProductImage = mongoose.model("ProductImage", productImageSchema);
+// Index for faster queries
+productImageSchema.index({ product: 1, isPrimary: -1 });
 
-export default ProductImage;
+export default mongoose.model("ProductImage", productImageSchema);

@@ -1,72 +1,79 @@
 // frontend/src/components/Modals/ProductViewModal.jsx
-
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Dialog,
   DialogTitle,
   DialogContent,
-  IconButton,
-  Box,
+  DialogActions,
+  Button,
+  Grid,
   Typography,
-  Avatar,
+  Box,
   Chip,
   Rating,
+  Card,
+  CardMedia,
+  IconButton,
+  Avatar,
   Divider,
-  Grid,
+  Tabs,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Paper,
-  Stack,
+  Badge,
 } from "@mui/material";
 import {
   Close,
-  Event,
-  Update,
-  ArrowBackIosNew,
-  ArrowForwardIos,
+  Edit,
+  Inventory,
+  LocalOffer,
+  Star,
+  ChevronLeft,
+  ChevronRight,
 } from "@mui/icons-material";
-import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-const InfoRow = ({ label, value, children }) => (
-  <Stack
-    direction="row"
-    justifyContent="space-between"
-    alignItems="center"
-    sx={{ py: 1.5 }}
-  >
-    <Typography variant="body2" color="text.secondary">
-      {label}
-    </Typography>
-    {children || (
-      <Typography variant="body1" fontWeight={600} align="right">
-        {value || "N/A"}
-      </Typography>
-    )}
-  </Stack>
-);
-
 const ProductViewModal = ({ open, onClose, product }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-
-  useEffect(() => {
-    if (product) {
-      const primaryIndex = product.images?.findIndex((img) => img.isPrimary);
-      setCurrentImageIndex(primaryIndex > -1 ? primaryIndex : 0);
-    }
-  }, [product]);
+  const [tabValue, setTabValue] = useState(0);
 
   if (!product) return null;
 
   const images = product.images || [];
+  const primaryImage = images.find((img) => img.isPrimary) || images[0];
+  const currentImage = images[currentImageIndex] || primaryImage;
 
-  const nextImage = () =>
+  const getImageUrl = (image) => {
+    if (!image) return null;
+    return image.fullImageUrl || `${API_BASE_URL}${image.imageUrl}`;
+  };
+
+  const handleNextImage = () => {
     setCurrentImageIndex((prev) => (prev + 1) % images.length);
-  const prevImage = () =>
-    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
 
-  const getStockColor = (stock) =>
-    stock === 0 ? "error" : stock <= 10 ? "warning" : "success";
+  const handlePrevImage = () => {
+    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+  };
+
+  const TabPanel = ({ children, value, index, ...other }) => (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`tabpanel-${index}`}
+      aria-labelledby={`tab-${index}`}
+      {...other}
+    >
+      {value === index && <Box sx={{ pt: 3 }}>{children}</Box>}
+    </div>
+  );
 
   return (
     <Dialog
@@ -74,237 +81,311 @@ const ProductViewModal = ({ open, onClose, product }) => {
       onClose={onClose}
       maxWidth="lg"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 4 } }}
+      PaperProps={{
+        sx: { minHeight: "80vh" },
+      }}
     >
       <DialogTitle>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-        >
-          <Typography variant="h5" fontWeight={700} color="primary.dark">
-            Product Details
-          </Typography>
-          <IconButton onClick={onClose}>
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Box>
+            <Typography variant="h5" fontWeight="bold">
+              {product.name}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              SKU: {product.sku || "N/A"}
+            </Typography>
+          </Box>
+          <IconButton onClick={onClose} size="small">
             <Close />
           </IconButton>
-        </Stack>
+        </Box>
       </DialogTitle>
-      <DialogContent dividers sx={{ p: { xs: 2, sm: 3 } }}>
-        <Grid container spacing={4}>
-          {/* Image Gallery */}
-          <Grid item xs={12} md={5}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                position: "relative",
-                overflow: "hidden",
-                height: "450px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <AnimatePresence initial={false}>
-                {images.length > 0 ? (
-                  <motion.img
-                    key={currentImageIndex}
-                    src={`${API_BASE_URL}${images[currentImageIndex]?.imageUrl}`}
+
+      <DialogContent dividers>
+        <Grid container spacing={3}>
+          {/* Image Section */}
+          <Grid item xs={12} md={6}>
+            <Card sx={{ position: "relative" }}>
+              {images.length > 0 ? (
+                <>
+                  <CardMedia
+                    component="img"
+                    height="400"
+                    image={getImageUrl(currentImage)}
                     alt={product.name}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    style={{
-                      maxWidth: "100%",
-                      maxHeight: "100%",
-                      objectFit: "contain",
+                    sx={{ objectFit: "cover" }}
+                    onError={(e) => {
+                      e.target.src = "/placeholder-image.png";
                     }}
                   />
-                ) : (
+
+                  {images.length > 1 && (
+                    <>
+                      <IconButton
+                        sx={{
+                          position: "absolute",
+                          left: 8,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          bgcolor: "rgba(0,0,0,0.5)",
+                          color: "white",
+                          "&:hover": { bgcolor: "rgba(0,0,0,0.7)" },
+                        }}
+                        onClick={handlePrevImage}
+                      >
+                        <ChevronLeft />
+                      </IconButton>
+
+                      <IconButton
+                        sx={{
+                          position: "absolute",
+                          right: 8,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          bgcolor: "rgba(0,0,0,0.5)",
+                          color: "white",
+                          "&:hover": { bgcolor: "rgba(0,0,0,0.7)" },
+                        }}
+                        onClick={handleNextImage}
+                      >
+                        <ChevronRight />
+                      </IconButton>
+
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          bottom: 8,
+                          right: 8,
+                          bgcolor: "rgba(0,0,0,0.6)",
+                          color: "white",
+                          px: 1,
+                          py: 0.5,
+                          borderRadius: 1,
+                        }}
+                      >
+                        <Typography variant="caption">
+                          {currentImageIndex + 1} / {images.length}
+                        </Typography>
+                      </Box>
+                    </>
+                  )}
+                </>
+              ) : (
+                <Box
+                  height={400}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  bgcolor="grey.100"
+                >
+                  <Typography variant="h6" color="text.secondary">
+                    No Image Available
+                  </Typography>
+                </Box>
+              )}
+            </Card>
+
+            {/* Thumbnail Images */}
+            {images.length > 1 && (
+              <Box sx={{ mt: 2, display: "flex", gap: 1, flexWrap: "wrap" }}>
+                {images.map((image, index) => (
                   <Avatar
+                    key={image._id}
+                    src={getImageUrl(image)}
                     variant="rounded"
                     sx={{
-                      width: 200,
-                      height: 200,
-                      bgcolor: product.color || "grey.200",
-                      fontSize: "6rem",
+                      width: 60,
+                      height: 60,
+                      cursor: "pointer",
+                      border:
+                        index === currentImageIndex
+                          ? "2px solid #1976d2"
+                          : "2px solid transparent",
+                      "&:hover": { border: "2px solid #1976d2" },
                     }}
+                    onClick={() => setCurrentImageIndex(index)}
                   >
-                    {product.icon || "📦"}
+                    {!getImageUrl(image) && product.icon}
                   </Avatar>
-                )}
-              </AnimatePresence>
-              {images.length > 1 && (
-                <>
-                  <IconButton
-                    onClick={prevImage}
-                    sx={{
-                      position: "absolute",
-                      top: "50%",
-                      left: 8,
-                      transform: "translateY(-50%)",
-                      bgcolor: "rgba(255,255,255,0.7)",
-                    }}
-                  >
-                    <ArrowBackIosNew />
-                  </IconButton>
-                  <IconButton
-                    onClick={nextImage}
-                    sx={{
-                      position: "absolute",
-                      top: "50%",
-                      right: 8,
-                      transform: "translateY(-50%)",
-                      bgcolor: "rgba(255,255,255,0.7)",
-                    }}
-                  >
-                    <ArrowForwardIos />
-                  </IconButton>
-                </>
-              )}
-            </Paper>
-            {/* Thumbnail previews */}
-            <Stack
-              direction="row"
-              spacing={1.5}
-              justifyContent="center"
-              sx={{ mt: 2 }}
-            >
-              {images.map((img, index) => (
-                <Avatar
-                  key={img._id}
-                  src={`${API_BASE_URL}${img.imageUrl}`}
-                  variant="rounded"
-                  onClick={() => setCurrentImageIndex(index)}
-                  sx={{
-                    width: 60,
-                    height: 60,
-                    cursor: "pointer",
-                    border:
-                      index === currentImageIndex
-                        ? "3px solid"
-                        : "3px solid transparent",
-                    borderColor: "primary.main",
-                    opacity: index === currentImageIndex ? 1 : 0.6,
-                    transition: "all 0.3s",
-                  }}
-                />
-              ))}
-            </Stack>
+                ))}
+              </Box>
+            )}
           </Grid>
 
           {/* Product Details */}
-          <Grid item xs={12} md={7}>
-            <Chip
-              label={product.category?.name || "Uncategorized"}
-              sx={{
-                bgcolor: `${product.category?.color}20`,
-                color: product.category?.color,
-                mb: 1,
-              }}
-            />
-            <Typography variant="h4" component="h1" fontWeight="bold">
-              {product.name}
-            </Typography>
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              sx={{ mt: 1, mb: 2 }}
-            >
-              <Rating value={product.rating || 0} readOnly precision={0.5} />
-              <Typography variant="body2">({product.rating || 0}/5)</Typography>
-            </Stack>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              {product.description}
-            </Typography>
+          <Grid item xs={12} md={6}>
+            <Box>
+              {/* Basic Info */}
+              <Box sx={{ mb: 3 }}>
+                <Typography
+                  variant="h4"
+                  color="success.main"
+                  fontWeight="bold"
+                  gutterBottom
+                >
+                  ₹{product.price?.toLocaleString("en-IN") || "0"}
+                </Typography>
 
-            <Grid container spacing={2} sx={{ mt: 2 }}>
-              <Grid item xs={12} sm={6}>
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Pricing
+                <Box display="flex" alignItems="center" gap={2} sx={{ mb: 2 }}>
+                  <Rating value={product.rating || 0} readOnly />
+                  <Typography variant="body2" color="text.secondary">
+                    ({product.reviewCount || 0} reviews)
                   </Typography>
-                  <InfoRow
-                    label="Original Price"
-                    value={`₹${product.originalPrice?.toLocaleString("en-IN")}`}
+                </Box>
+
+                <Box display="flex" gap={1} sx={{ mb: 2 }}>
+                  <Chip
+                    label={product.status}
+                    color={product.status === "Active" ? "success" : "warning"}
+                    variant="filled"
                   />
-                  <Divider />
-                  <InfoRow
-                    label="Discount"
-                    value={`${product.discount || 0}%`}
+                  <Chip
+                    label={`Stock: ${product.stock || 0}`}
+                    color={
+                      (product.stock || 0) > 10
+                        ? "success"
+                        : (product.stock || 0) > 0
+                        ? "warning"
+                        : "error"
+                    }
+                    variant="outlined"
                   />
-                  <Divider />
-                  <InfoRow label="Final Price">
-                    <Typography
-                      variant="h4"
-                      color="primary.main"
-                      fontWeight="bold"
-                    >
-                      ₹{product.price.toLocaleString("en-IN")}
+                  {product.featured && (
+                    <Chip
+                      label="Featured"
+                      color="primary"
+                      icon={<Star />}
+                      variant="filled"
+                    />
+                  )}
+                </Box>
+
+                <Typography variant="body1" paragraph>
+                  {product.description || "No description available."}
+                </Typography>
+              </Box>
+
+              <Divider sx={{ my: 2 }} />
+
+              {/* Detailed Information Tabs */}
+              <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
+                <Tab label="Details" />
+                <Tab label="Specifications" />
+                <Tab label="Images" />
+              </Tabs>
+
+              <TabPanel value={tabValue} index={0}>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Category</TableCell>
+                        <TableCell>{product.category?.name || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Brand</TableCell>
+                        <TableCell>{product.brand || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">SKU</TableCell>
+                        <TableCell>{product.sku || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Barcode</TableCell>
+                        <TableCell>{product.barcode || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Min Stock Level</TableCell>
+                        <TableCell>{product.minStock || 0}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Weight</TableCell>
+                        <TableCell>{product.weight || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Dimensions</TableCell>
+                        <TableCell>{product.dimensions || "N/A"}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </TabPanel>
+
+              <TabPanel value={tabValue} index={1}>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Material</TableCell>
+                        <TableCell>{product.material || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Color</TableCell>
+                        <TableCell>{product.color || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Size</TableCell>
+                        <TableCell>{product.size || "N/A"}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell fontWeight="bold">Warranty</TableCell>
+                        <TableCell>{product.warranty || "N/A"}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </TabPanel>
+
+              <TabPanel value={tabValue} index={2}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Product Images ({images.length})
+                  </Typography>
+                  {images.length > 0 ? (
+                    <Grid container spacing={2}>
+                      {images.map((image, index) => (
+                        <Grid item xs={4} key={image._id}>
+                          <Card>
+                            <CardMedia
+                              component="img"
+                              height="120"
+                              image={getImageUrl(image)}
+                              alt={`Image ${index + 1}`}
+                              sx={{ objectFit: "cover" }}
+                            />
+                            <Box sx={{ p: 1, textAlign: "center" }}>
+                              {image.isPrimary && (
+                                <Chip
+                                  label="Primary"
+                                  color="primary"
+                                  size="small"
+                                />
+                              )}
+                            </Box>
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  ) : (
+                    <Typography color="text.secondary">
+                      No images available
                     </Typography>
-                  </InfoRow>
-                </Paper>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Inventory
-                  </Typography>
-                  <InfoRow
-                    label="Status"
-                    children={
-                      <Chip
-                        label={product.status}
-                        color={
-                          product.status === "Active" ? "success" : "warning"
-                        }
-                        size="small"
-                      />
-                    }
-                  />
-                  <Divider />
-                  <InfoRow
-                    label="Stock"
-                    children={
-                      <Chip
-                        label={`${product.stock} available`}
-                        color={getStockColor(product.stock)}
-                      />
-                    }
-                  />
-                  <Divider />
-                  <InfoRow label="SKU / ID" value={product.sku || "N/A"} />
-                </Paper>
-              </Grid>
-            </Grid>
-
-            <Stack
-              direction="row"
-              justifyContent="space-between"
-              sx={{ mt: 4, color: "text.secondary" }}
-            >
-              <Box display="flex" alignItems="center" gap={1}>
-                <Event fontSize="small" />
-                <Typography variant="caption">
-                  Created:{" "}
-                  {new Date(product.createdAt).toLocaleDateString("en-IN")}
-                </Typography>
-              </Box>
-              <Box display="flex" alignItems="center" gap={1}>
-                <Update fontSize="small" />
-                <Typography variant="caption">
-                  Updated:{" "}
-                  {new Date(product.updatedAt).toLocaleDateString("en-IN")}
-                </Typography>
-              </Box>
-            </Stack>
+                  )}
+                </Box>
+              </TabPanel>
+            </Box>
           </Grid>
         </Grid>
       </DialogContent>
+
+      <DialogActions sx={{ p: 2, gap: 1 }}>
+        <Button variant="outlined" onClick={onClose}>
+          Close
+        </Button>
+        <Button variant="contained" startIcon={<Edit />} color="primary">
+          Edit Product
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 };

@@ -1,3 +1,4 @@
+// backend/controllers/productImageController.js
 import ProductImage from "../models/ProductImage.js";
 import Product from "../models/Product.js";
 import asyncHandler from "../utils/asyncHandler.js";
@@ -7,6 +8,11 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Get base URL from environment or use default
+const getBaseUrl = () => {
+  return process.env.BASE_URL || "http://localhost:5000";
+};
 
 // @desc    Upload an image for a product
 // @route   POST /api/products/:productId/images
@@ -27,22 +33,89 @@ export const uploadProductImage = asyncHandler(async (req, res) => {
 
   // Check if any other images exist for this product
   const imageCount = await ProductImage.countDocuments({ product: productId });
-
-  // If this is the first image, set it as primary
   const isPrimary = imageCount === 0;
 
-  const imageUrl = `/uploads/${req.file.filename}`;
+  // Store both relative path and full URL
+  const relativePath = `/uploads/${req.file.filename}`;
+  const fullImageUrl = `${getBaseUrl()}${relativePath}`;
 
   const productImage = await ProductImage.create({
     product: productId,
-    imageUrl: imageUrl,
+    imageUrl: relativePath,
+    fullImageUrl: fullImageUrl,
     isPrimary: isPrimary,
+    fileName: req.file.filename,
+    originalName: req.file.originalname,
+    mimeType: req.file.mimetype,
+    size: req.file.size,
   });
+
+  // Return with populated product info and proper URLs
+  const populatedImage = await ProductImage.findById(productImage._id).populate(
+    "product",
+    "name"
+  );
 
   res.status(201).json({
     success: true,
-    data: productImage,
+    data: {
+      ...populatedImage.toObject(),
+      fullImageUrl: fullImageUrl,
+    },
     message: "Image uploaded successfully",
+  });
+});
+
+// @desc    Upload multiple images for a product
+// @route   POST /api/products/:productId/images/multiple
+// @access  Public
+export const uploadMultipleProductImages = asyncHandler(async (req, res) => {
+  const { productId } = req.params;
+
+  if (!req.files || req.files.length === 0) {
+    res.status(400);
+    throw new Error("Please upload at least one file");
+  }
+
+  const product = await Product.findById(productId);
+  if (!product) {
+    res.status(404);
+    throw new Error("Product not found");
+  }
+
+  const existingImageCount = await ProductImage.countDocuments({
+    product: productId,
+  });
+  const uploadedImages = [];
+
+  for (let i = 0; i < req.files.length; i++) {
+    const file = req.files[i];
+    const isPrimary = existingImageCount === 0 && i === 0;
+
+    const relativePath = `/uploads/${file.filename}`;
+    const fullImageUrl = `${getBaseUrl()}${relativePath}`;
+
+    const productImage = await ProductImage.create({
+      product: productId,
+      imageUrl: relativePath,
+      fullImageUrl: fullImageUrl,
+      isPrimary: isPrimary,
+      fileName: file.filename,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+    });
+
+    uploadedImages.push({
+      ...productImage.toObject(),
+      fullImageUrl: fullImageUrl,
+    });
+  }
+
+  res.status(201).json({
+    success: true,
+    data: uploadedImages,
+    message: `${uploadedImages.length} images uploaded successfully`,
   });
 });
 
@@ -51,8 +124,21 @@ export const uploadProductImage = asyncHandler(async (req, res) => {
 // @access  Public
 export const getProductImages = asyncHandler(async (req, res) => {
   const { productId } = req.params;
-  const images = await ProductImage.find({ product: productId });
-  res.status(200).json({ success: true, data: images });
+
+  const images = await ProductImage.find({ product: productId })
+    .populate("product", "name")
+    .sort({ isPrimary: -1, createdAt: 1 });
+
+  // Add full URLs to response
+  const imagesWithUrls = images.map((img) => ({
+    ...img.toObject(),
+    fullImageUrl: `${getBaseUrl()}${img.imageUrl}`,
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: imagesWithUrls,
+  });
 });
 
 // @desc    Delete a product image
@@ -67,18 +153,18 @@ export const deleteProductImage = asyncHandler(async (req, res) => {
     throw new Error("Image not found");
   }
 
-  // Correctly construct the file path
-  const filePath = path.join(__dirname, "..", image.imageUrl);
+  // Construct correct file path
+  const filePath = path.join(__dirname, "..", "..", image.imageUrl);
 
+  // Delete file from filesystem
   fs.unlink(filePath, async (err) => {
     if (err) {
-      // Log error but continue to delete from DB
       console.error("Failed to delete file from server:", err);
     }
 
     await ProductImage.findByIdAndDelete(imageId);
 
-    // If the deleted image was primary, try to set a new primary image
+    // If deleted image was primary, set another as primary
     if (image.isPrimary) {
       const remainingImage = await ProductImage.findOne({
         product: image.product,
@@ -89,9 +175,10 @@ export const deleteProductImage = asyncHandler(async (req, res) => {
       }
     }
 
-    res
-      .status(200)
-      .json({ success: true, message: "Image deleted successfully" });
+    res.status(200).json({
+      success: true,
+      message: "Image deleted successfully",
+    });
   });
 });
 
@@ -108,7 +195,7 @@ export const updateProductImage = asyncHandler(async (req, res) => {
     throw new Error("Image not found");
   }
 
-  // If setting a new primary image, unset other primary images for this product
+  // If setting as primary, unset other primary images
   if (isPrimary) {
     await ProductImage.updateMany(
       { product: image.product, _id: { $ne: imageId } },
@@ -124,7 +211,10 @@ export const updateProductImage = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: image,
+    data: {
+      ...image.toObject(),
+      fullImageUrl: `${getBaseUrl()}${image.imageUrl}`,
+    },
     message: "Image updated successfully",
   });
 });

@@ -1,3 +1,4 @@
+// frontend/src/pages/Products.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { productService } from "../services/productService";
 import { categoryService } from "../services/categoryService";
@@ -22,6 +23,8 @@ import {
   InputLabel,
   Select,
   Rating,
+  Tooltip,
+  Badge,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -33,13 +36,14 @@ import {
   Visibility,
   AddPhotoAlternate,
   Inventory as InventoryIcon,
+  Image as ImageIcon,
 } from "@mui/icons-material";
 import FormModal from "../components/Modals/FormModal";
 import ProductForm from "../components/Forms/ProductForm";
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 
-// **FIX:** Define the base URL to construct full image paths
+// Enhanced API base URL configuration
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -55,6 +59,7 @@ const Products = () => {
   const [rowCount, setRowCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const [openModal, setOpenModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
@@ -65,6 +70,7 @@ const Products = () => {
   const [openImageUploadModal, setOpenImageUploadModal] = useState(false);
   const [openVariantModal, setOpenVariantModal] = useState(false);
 
+  // Enhanced fetch function with error handling
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -74,41 +80,80 @@ const Products = () => {
         limit: paginationModel.pageSize,
         search: debouncedSearchTerm,
         category: filterCategory,
+        status: filterStatus,
       });
-      setProducts(response.data.products);
+
+      // Ensure images have proper URLs
+      const productsWithImageUrls = response.data.products.map((product) => ({
+        ...product,
+        images:
+          product.images?.map((img) => ({
+            ...img,
+            fullImageUrl: img.fullImageUrl || `${API_BASE_URL}${img.imageUrl}`,
+          })) || [],
+      }));
+
+      setProducts(productsWithImageUrls);
       setRowCount(response.data.pagination.total);
     } catch (error) {
-      setError("Failed to load products. Please try again.");
-      toast.error("Failed to fetch products");
+      const errorMessage =
+        error.response?.data?.message || "Failed to load products";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, debouncedSearchTerm, filterCategory]);
+  }, [paginationModel, debouncedSearchTerm, filterCategory, filterStatus]);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const response = await categoryService.getCategories({ limit: 100 });
+      setCategories(response.data.categories || []);
+    } catch (error) {
+      console.error("Failed to fetch categories:", error);
+      toast.error("Failed to load categories");
+    }
+  }, []);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const response = await categoryService.getCategories({ limit: 100 });
-        setCategories(response.data.categories);
-      } catch (error) {
-        console.error("Failed to fetch categories:", error);
-      }
-    };
     fetchCategories();
+  }, [fetchCategories]);
+
+  // Enhanced image URL helper function
+  const getImageUrl = useCallback((image) => {
+    if (!image) return null;
+
+    if (image.fullImageUrl) {
+      return image.fullImageUrl;
+    }
+
+    if (image.imageUrl) {
+      return image.imageUrl.startsWith("http")
+        ? image.imageUrl
+        : `${API_BASE_URL}${image.imageUrl}`;
+    }
+
+    return null;
   }, []);
 
   const handleAddProduct = () => {
     setEditProduct(null);
     setOpenModal(true);
   };
+
   const handleMenuClick = (event, product) => {
     setAnchorEl(event.currentTarget);
     setSelectedProduct(product);
   };
-  const handleMenuClose = () => setAnchorEl(null);
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedProduct(null);
+  };
 
   const handleEditProduct = async (product) => {
     try {
@@ -124,7 +169,16 @@ const Products = () => {
   const handleViewProduct = async (product) => {
     try {
       const response = await productService.getProduct(product._id);
-      setViewProduct(response.data);
+      // Ensure images have proper URLs
+      const productWithImageUrls = {
+        ...response.data,
+        images:
+          response.data.images?.map((img) => ({
+            ...img,
+            fullImageUrl: getImageUrl(img),
+          })) || [],
+      };
+      setViewProduct(productWithImageUrls);
       setOpenViewModal(true);
       handleMenuClose();
     } catch (error) {
@@ -137,6 +191,7 @@ const Products = () => {
     setOpenImageUploadModal(true);
     handleMenuClose();
   };
+
   const handleManageStock = (product) => {
     setSelectedProduct(product);
     setOpenVariantModal(true);
@@ -144,13 +199,19 @@ const Products = () => {
   };
 
   const handleDeleteProduct = async (productId) => {
-    if (window.confirm("Are you sure? This action is permanent.")) {
+    if (
+      window.confirm(
+        "Are you sure you want to delete this product? This action cannot be undone."
+      )
+    ) {
       try {
         await productService.deleteProduct(productId);
-        toast.success("Product deleted!");
+        toast.success("Product deleted successfully!");
         fetchProducts();
       } catch (error) {
-        toast.error(error.response?.data?.message || "Delete failed");
+        toast.error(
+          error.response?.data?.message || "Failed to delete product"
+        );
       }
     }
     handleMenuClose();
@@ -163,14 +224,22 @@ const Products = () => {
         ? await productService.updateProduct(editProduct._id, productData)
         : await productService.createProduct(productData);
 
-      toast.success(`Product ${editProduct ? "updated" : "created"}!`);
+      toast.success(
+        `Product ${editProduct ? "updated" : "created"} successfully!`
+      );
 
-      const productId = response.data._id;
+      // Handle image upload if provided
       if (image) {
+        const productId = response.data._id;
         const imageFormData = new FormData();
         imageFormData.append("image", image);
-        await productService.uploadProductImage(productId, imageFormData);
-        toast.success("Image uploaded!");
+
+        try {
+          await productService.uploadProductImage(productId, imageFormData);
+          toast.success("Image uploaded successfully!");
+        } catch (imgError) {
+          toast.error("Product saved but image upload failed");
+        }
       }
 
       setOpenModal(false);
@@ -180,78 +249,135 @@ const Products = () => {
     }
   };
 
+  // Handle successful image upload
+  const handleImageUploadSuccess = useCallback(() => {
+    toast.success("Images uploaded successfully!");
+    fetchProducts(); // Refresh the product list
+    setOpenImageUploadModal(false);
+  }, [fetchProducts]);
+
+  // Enhanced column definitions
   const columns = [
     {
       field: "images",
       headerName: "Image",
-      width: 80,
+      width: 90,
       sortable: false,
       renderCell: (params) => {
-        const primaryImage =
-          params.row.images?.find((img) => img.isPrimary) ||
-          params.row.images?.[0];
-        const imageUrl = primaryImage
-          ? `${API_BASE_URL}${primaryImage.imageUrl}`
-          : "";
+        const images = params.row.images || [];
+        const primaryImage = images.find((img) => img.isPrimary) || images[0];
+        const imageUrl = primaryImage ? getImageUrl(primaryImage) : null;
+        const imageCount = images.length;
+
         return (
-          <Avatar
-            src={imageUrl}
-            variant="rounded"
-            sx={{ width: 50, height: 50, bgcolor: "grey.200" }}
-          >
-            {params.row.icon || "📦"}
-          </Avatar>
+          <Tooltip title={`${imageCount} image(s)`}>
+            <Badge badgeContent={imageCount} color="primary" max={99}>
+              <Avatar
+                src={imageUrl}
+                variant="rounded"
+                sx={{
+                  width: 60,
+                  height: 60,
+                  bgcolor: "grey.200",
+                  cursor: imageUrl ? "pointer" : "default",
+                  border: imageUrl
+                    ? "2px solid transparent"
+                    : "2px dashed #ccc",
+                  "&:hover": imageUrl
+                    ? {
+                        border: "2px solid #1976d2",
+                        transform: "scale(1.05)",
+                      }
+                    : {},
+                }}
+                onClick={() => imageUrl && handleViewProduct(params.row)}
+              >
+                {imageUrl ? null : <ImageIcon />}
+              </Avatar>
+            </Badge>
+          </Tooltip>
         );
       },
     },
-    { field: "name", headerName: "Product Name", width: 250 },
+    {
+      field: "name",
+      headerName: "Product Name",
+      width: 280,
+      renderCell: (params) => (
+        <Box>
+          <Typography variant="body2" fontWeight="medium" noWrap>
+            {params.value}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            SKU: {params.row.sku || "N/A"}
+          </Typography>
+        </Box>
+      ),
+    },
     {
       field: "category",
       headerName: "Category",
       width: 150,
       valueGetter: (value) => value?.name || "N/A",
+      renderCell: (params) => (
+        <Chip
+          label={params.value}
+          size="small"
+          variant="outlined"
+          color="primary"
+        />
+      ),
     },
     {
       field: "price",
       headerName: "Price",
       width: 120,
-      renderCell: (params) => `₹${params.value.toLocaleString("en-IN")}`,
+      renderCell: (params) => (
+        <Typography variant="body2" fontWeight="bold" color="success.main">
+          ₹{params.value?.toLocaleString("en-IN") || "0"}
+        </Typography>
+      ),
     },
     {
       field: "stock",
       headerName: "Stock",
-      width: 120,
+      width: 100,
       renderCell: (params) => (
         <Chip
-          label={params.value}
+          label={params.value || 0}
           size="small"
           color={
-            params.value > 10
+            (params.value || 0) > 10
               ? "success"
-              : params.value > 0
+              : (params.value || 0) > 0
               ? "warning"
               : "error"
           }
+          variant="filled"
         />
       ),
     },
     {
       field: "rating",
       headerName: "Rating",
-      width: 120,
+      width: 130,
       renderCell: (params) => (
-        <Rating value={params.value || 0} size="small" readOnly />
+        <Box display="flex" alignItems="center" gap={1}>
+          <Rating value={params.value || 0} size="small" readOnly />
+          <Typography variant="caption">({params.value || 0})</Typography>
+        </Box>
       ),
     },
     {
       field: "status",
       headerName: "Status",
-      width: 100,
+      width: 110,
       renderCell: (params) => (
         <Chip
           label={params.value}
           color={params.value === "Active" ? "success" : "warning"}
           size="small"
+          variant="filled"
         />
       ),
     },
@@ -264,6 +390,12 @@ const Products = () => {
         <IconButton
           onClick={(e) => handleMenuClick(e, params.row)}
           size="small"
+          sx={{
+            "&:hover": {
+              backgroundColor: "primary.light",
+              color: "white",
+            },
+          }}
         >
           <MoreVert />
         </IconButton>
@@ -271,16 +403,27 @@ const Products = () => {
     },
   ];
 
-  if (error)
+  if (error && !loading) {
     return (
       <Box sx={{ p: 3 }}>
-        <Alert severity="error">{error}</Alert>
+        <Alert
+          severity="error"
+          action={
+            <Button onClick={fetchProducts} size="small">
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
       </Box>
     );
+  }
 
   return (
-    <Box>
-      <Card sx={{ mb: 3 }}>
+    <Box sx={{ p: 2 }}>
+      {/* Enhanced Filter Section */}
+      <Card sx={{ mb: 3, boxShadow: 3 }}>
         <CardContent>
           <Box
             sx={{
@@ -291,7 +434,7 @@ const Products = () => {
             }}
           >
             <TextField
-              placeholder="Search products..."
+              placeholder="Search products, SKU, brand..."
               size="small"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -302,7 +445,7 @@ const Products = () => {
                   </InputAdornment>
                 ),
               }}
-              sx={{ flexGrow: 1, minWidth: 250 }}
+              sx={{ flexGrow: 1, minWidth: 280 }}
             />
             <FormControl size="small" sx={{ minWidth: 180 }}>
               <InputLabel>Category</InputLabel>
@@ -312,7 +455,7 @@ const Products = () => {
                 onChange={(e) => setFilterCategory(e.target.value)}
               >
                 <MenuItem value="">
-                  <em>All</em>
+                  <em>All Categories</em>
                 </MenuItem>
                 {categories.map((c) => (
                   <MenuItem key={c._id} value={c._id}>
@@ -321,10 +464,29 @@ const Products = () => {
                 ))}
               </Select>
             </FormControl>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={filterStatus}
+                label="Status"
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <MenuItem value="">
+                  <em>All Status</em>
+                </MenuItem>
+                <MenuItem value="Active">Active</MenuItem>
+                <MenuItem value="Inactive">Inactive</MenuItem>
+              </Select>
+            </FormControl>
             <Button
               variant="contained"
               startIcon={<Add />}
               onClick={handleAddProduct}
+              sx={{
+                minWidth: 140,
+                boxShadow: 2,
+                "&:hover": { boxShadow: 4 },
+              }}
             >
               Add Product
             </Button>
@@ -332,57 +494,75 @@ const Products = () => {
         </CardContent>
       </Card>
 
-      <Card>
-        <Box sx={{ height: 631, width: "100%" }}>
+      {/* Enhanced Data Grid */}
+      <Card sx={{ boxShadow: 3 }}>
+        <Box sx={{ height: 700, width: "100%" }}>
           <DataGrid
             rows={products}
             columns={columns}
             getRowId={(row) => row._id}
             loading={loading}
             rowCount={rowCount}
-            pageSizeOptions={[10, 20, 50]}
+            pageSizeOptions={[10, 20, 50, 100]}
             paginationModel={paginationModel}
             onPaginationModelChange={setPaginationModel}
             paginationMode="server"
+            disableRowSelectionOnClick
+            sx={{
+              "& .MuiDataGrid-row:hover": {
+                backgroundColor: "action.hover",
+                cursor: "pointer",
+              },
+              "& .MuiDataGrid-cell": {
+                display: "flex",
+                alignItems: "center",
+              },
+            }}
           />
         </Box>
       </Card>
 
+      {/* Enhanced Context Menu */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
+        PaperProps={{
+          sx: { minWidth: 200 },
+        }}
       >
         <MenuItem onClick={() => handleViewProduct(selectedProduct)}>
           <Visibility sx={{ mr: 1 }} /> View Details
         </MenuItem>
         <MenuItem onClick={() => handleEditProduct(selectedProduct)}>
-          <Edit sx={{ mr: 1 }} /> Edit
+          <Edit sx={{ mr: 1 }} /> Edit Product
         </MenuItem>
         <MenuItem onClick={() => handleOpenImageUpload(selectedProduct)}>
-          <AddPhotoAlternate sx={{ mr: 1 }} /> Images
+          <AddPhotoAlternate sx={{ mr: 1 }} /> Manage Images
         </MenuItem>
         <MenuItem onClick={() => handleManageStock(selectedProduct)}>
-          <InventoryIcon sx={{ mr: 1 }} /> Stock
+          <InventoryIcon sx={{ mr: 1 }} /> Manage Stock
         </MenuItem>
         <MenuItem
           onClick={() => handleDeleteProduct(selectedProduct?._id)}
           sx={{ color: "error.main" }}
         >
-          <Delete sx={{ mr: 1 }} /> Delete
+          <Delete sx={{ mr: 1 }} /> Delete Product
         </MenuItem>
       </Menu>
 
+      {/* Modals */}
       <FormModal
         open={openModal}
         onClose={() => setOpenModal(false)}
-        title={editProduct ? "Edit Product" : "Add Product"}
-        maxWidth="md"
+        title={editProduct ? "Edit Product" : "Add New Product"}
+        maxWidth="lg"
       >
         <ProductForm
           initialData={editProduct}
           onSubmit={handleFormSubmit}
           onCancel={() => setOpenModal(false)}
+          categories={categories}
         />
       </FormModal>
 
@@ -393,14 +573,16 @@ const Products = () => {
           product={viewProduct}
         />
       )}
+
       {selectedProduct && (
         <ImageUploadModal
           open={openImageUploadModal}
           onClose={() => setOpenImageUploadModal(false)}
           product={selectedProduct}
-          onUploadSuccess={fetchProducts}
+          onUploadSuccess={handleImageUploadSuccess}
         />
       )}
+
       {selectedProduct && (
         <VariantStockModal
           open={openVariantModal}
@@ -411,4 +593,5 @@ const Products = () => {
     </Box>
   );
 };
+
 export default Products;
