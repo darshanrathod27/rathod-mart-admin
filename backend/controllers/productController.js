@@ -1,95 +1,221 @@
-// backend/controllers/productController.js
-
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
-import InventoryLedger from "../models/InventoryLedger.js";
+import ImageService from "../services/imageService.js";
 import asyncHandler from "../utils/asyncHandler.js";
-import { validationResult } from "express-validator";
-import { getProductIcon, getProductColor } from "../utils/productIcons.js";
 
-// @desc Get all products
-// @route GET /api/products
-// @access Public
+// Create product with images
+export const createProduct = asyncHandler(async (req, res) => {
+  const {
+    name,
+    description,
+    shortDescription,
+    category,
+    brand,
+    basePrice,
+    discountPrice,
+    tags,
+    features,
+    specifications,
+    variants,
+    status,
+  } = req.body;
+
+  // Validate category exists
+  const categoryExists = await Category.findById(category);
+  if (!categoryExists) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid category ID",
+    });
+  }
+
+  let productImages = [];
+
+  // Handle main product images
+  if (req.files && req.files.images) {
+    const imageFiles = Array.isArray(req.files.images)
+      ? req.files.images
+      : [req.files.images];
+
+    // Validate images
+    const validationErrors = ImageService.validateMultipleImages(imageFiles);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Image validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Upload images
+    const uploadedImages = await ImageService.uploadMultipleImages(
+      imageFiles,
+      "products"
+    );
+    productImages = uploadedImages.map((img, index) => ({
+      ...img,
+      isPrimary: index === 0,
+      sortOrder: index,
+      alt: `${name} - Image ${index + 1}`,
+    }));
+  }
+
+  // Process variants with images
+  let processedVariants = [];
+  if (variants && Array.isArray(variants)) {
+    for (let i = 0; i < variants.length; i++) {
+      const variant = variants[i];
+      let variantImages = [];
+
+      // Handle variant images
+      const variantImageField = `variant_${i}_images`;
+      if (req.files && req.files[variantImageField]) {
+        const variantImageFiles = Array.isArray(req.files[variantImageField])
+          ? req.files[variantImageField]
+          : [req.files[variantImageField]];
+
+        const uploadedVariantImages = await ImageService.uploadMultipleImages(
+          variantImageFiles,
+          "products/variants"
+        );
+
+        variantImages = uploadedVariantImages.map((img, index) => ({
+          ...img,
+          isPrimary: index === 0,
+          sortOrder: index,
+          alt: `${name} - ${variant.color.name} ${variant.size.name} - Image ${
+            index + 1
+          }`,
+        }));
+      }
+
+      processedVariants.push({
+        ...variant,
+        images: variantImages,
+        sku:
+          variant.sku ||
+          `${name.replace(/\s+/g, "-")}-${variant.color.name}-${
+            variant.size.name
+          }`.toUpperCase(),
+      });
+    }
+  }
+
+  // Calculate total stock
+  const totalStock = processedVariants.reduce(
+    (total, variant) => total + (variant.stock || 0),
+    0
+  );
+
+  // Generate slug
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  const product = new Product({
+    name,
+    description,
+    shortDescription,
+    category,
+    brand,
+    images: productImages,
+    variants: processedVariants,
+    basePrice,
+    discountPrice,
+    tags: tags ? tags.split(",").map((tag) => tag.trim()) : [],
+    features: features
+      ? features.split(",").map((feature) => feature.trim())
+      : [],
+    specifications: specifications ? JSON.parse(specifications) : [],
+    status: status || "draft",
+    totalStock,
+    slug: `${slug}-${Date.now()}`,
+  });
+
+  const savedProduct = await product.save();
+  await savedProduct.populate("category");
+
+  res.status(201).json({
+    success: true,
+    message: "Product created successfully",
+    data: savedProduct,
+  });
+});
+
+// Get all products with enhanced filtering
 export const getProducts = asyncHandler(async (req, res) => {
   const {
     page = 1,
-    limit = 10,
-    search = "",
-    category = "",
-    status = "",
-    minPrice = "",
-    maxPrice = "",
-    inStock = "",
-    featured = "",
+    limit = 12,
+    category,
+    brand,
+    status,
+    featured,
+    trending,
+    minPrice,
+    maxPrice,
+    search,
     sortBy = "createdAt",
     sortOrder = "desc",
   } = req.query;
 
-  // Build filter object
-  const filter = { isDeleted: false };
+  // Build query
+  const query = {};
+
+  if (category) query.category = category;
+  if (brand) query.brand = brand;
+  if (status) query.status = status;
+  if (featured !== undefined) query.featured = featured === "true";
+  if (trending !== undefined) query.trending = trending === "true";
+
+  if (minPrice || maxPrice) {
+    query.basePrice = {};
+    if (minPrice) query.basePrice.$gte = Number(minPrice);
+    if (maxPrice) query.basePrice.$lte = Number(maxPrice);
+  }
 
   if (search) {
-    filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { description: { $regex: search, $options: "i" } },
-      { sku: { $regex: search, $options: "i" } },
-      { brand: { $regex: search, $options: "i" } },
-    ];
+    query.$text = { $search: search };
   }
 
-  if (category) filter.category = category;
-  if (status) filter.status = status;
-  if (featured !== "") filter.featured = featured === "true";
-  if (inStock === "true") filter.stock = { $gt: 0 };
-  if (inStock === "false") filter.stock = 0;
+  // Calculate pagination
+  const skip = (Number(page) - 1) * Number(limit);
 
-  // Price range filter
-  if (minPrice || maxPrice) {
-    filter.price = {};
-    if (minPrice) filter.price.$gte = parseFloat(minPrice);
-    if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
-  }
+  // Sort options
+  const sortOptions = {};
+  sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
 
-  // Build sort object
-  const sort = {};
-  sort[sortBy] = sortOrder === "desc" ? -1 : 1;
+  // Execute query with population
+  const products = await Product.find(query)
+    .populate("category", "name slug")
+    .select("-__v")
+    .sort(sortOptions)
+    .skip(skip)
+    .limit(Number(limit))
+    .lean();
 
-  // Execute query with pagination
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const [products, total] = await Promise.all([
-    Product.find(filter)
-      .populate("category", "name icon color")
-      .populate("images")
-      .sort(sort)
-      .skip(skip)
-      .limit(parseInt(limit)),
-    Product.countDocuments(filter),
-  ]);
+  const total = await Product.countDocuments(query);
 
   res.status(200).json({
     success: true,
-    data: {
-      products,
-      pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / limit),
-        total,
-        limit: parseInt(limit),
-      },
+    data: products,
+    pagination: {
+      current: Number(page),
+      pages: Math.ceil(total / Number(limit)),
+      total,
+      limit: Number(limit),
+      hasNext: skip + Number(limit) < total,
+      hasPrev: Number(page) > 1,
     },
   });
 });
 
-// @desc Get single product
-// @route GET /api/products/:id
-// @access Public
+// Get single product
 export const getProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findOne({
-    _id: req.params.id,
-    isDeleted: false,
-  })
-    .populate("category", "name icon color")
-    .populate("images");
+  const product = await Product.findById(req.params.id)
+    .populate("category", "name slug description")
+    .lean();
 
   if (!product) {
     return res.status(404).json({
@@ -98,176 +224,89 @@ export const getProduct = asyncHandler(async (req, res) => {
     });
   }
 
+  // Increment view count
+  await Product.findByIdAndUpdate(req.params.id, { $inc: { viewCount: 1 } });
+
   res.status(200).json({
     success: true,
     data: product,
   });
 });
 
-// @desc Create new product
-// @route POST /api/products
-// @access Public
-export const createProduct = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation failed",
-      errors: errors.array(),
-    });
-  }
-
-  const { name, description, category, price, stock } = req.body;
-
-  // Check if category exists
-  const categoryExists = await Category.findOne({
-    _id: category,
-    isDeleted: false,
-  });
-
-  if (!categoryExists) {
-    return res.status(400).json({
-      success: false,
-      message: "Category not found",
-    });
-  }
-
-  // Auto-assign icon and color based on product name and category
-  const autoIcon = getProductIcon(name, categoryExists.name);
-  const autoColor = getProductColor(name, categoryExists.name);
-
-  // Create product WITHOUT stock field (or set to 0)
-  const product = await Product.create({
-    ...req.body,
-    stock: 0, // Always set to 0, managed via InventoryLedger
-    icon: autoIcon,
-    color: autoColor,
-  });
-
-  // If initial stock provided, create inventory ledger entry
-  if (stock && stock > 0) {
-    await InventoryLedger.create({
-      product: product._id,
-      variant: null,
-      referenceType: "Purchase",
-      quantity: Number(stock),
-      type: "IN",
-      balanceStock: Number(stock),
-      remarks: "Initial stock - Product creation",
-      createdBy: req.user?._id,
-    });
-
-    // Update product stock field for backward compatibility
-    product.stock = Number(stock);
-    await product.save();
-  }
-
-  // Update category product count
-  await Category.findByIdAndUpdate(category, {
-    $inc: { productsCount: 1 },
-  });
-
-  // Populate category info
-  await product.populate("category", "name icon color");
-
-  res.status(201).json({
-    success: true,
-    data: product,
-    message: "Product created successfully",
-  });
-});
-
-// @desc Update product
-// @route PUT /api/products/:id
-// @access Public
+// Update product
 export const updateProduct = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation failed",
-      errors: errors.array(),
-    });
-  }
+  const productId = req.params.id;
+  const existingProduct = await Product.findById(productId);
 
-  let product = await Product.findOne({
-    _id: req.params.id,
-    isDeleted: false,
-  });
-
-  if (!product) {
+  if (!existingProduct) {
     return res.status(404).json({
       success: false,
       message: "Product not found",
     });
   }
 
-  const oldCategoryId = product.category.toString();
-  const { category: newCategoryId, name, stock, ...otherUpdates } = req.body;
+  const updateData = { ...req.body };
 
-  // If category is being changed
-  if (newCategoryId && newCategoryId !== oldCategoryId) {
-    const newCategory = await Category.findOne({
-      _id: newCategoryId,
-      isDeleted: false,
-    });
+  // Handle new images
+  if (req.files && req.files.images) {
+    const imageFiles = Array.isArray(req.files.images)
+      ? req.files.images
+      : [req.files.images];
+    const uploadedImages = await ImageService.uploadMultipleImages(
+      imageFiles,
+      "products"
+    );
 
-    if (!newCategory) {
-      return res.status(400).json({
-        success: false,
-        message: "New category not found",
-      });
+    const newImages = uploadedImages.map((img, index) => ({
+      ...img,
+      isPrimary: existingProduct.images.length === 0 && index === 0,
+      sortOrder: existingProduct.images.length + index,
+      alt: `${updateData.name || existingProduct.name} - Image ${
+        existingProduct.images.length + index + 1
+      }`,
+    }));
+
+    updateData.images = [...existingProduct.images, ...newImages];
+  }
+
+  // Handle image deletions
+  if (req.body.deleteImages) {
+    const imagesToDelete = JSON.parse(req.body.deleteImages);
+    for (const publicId of imagesToDelete) {
+      await ImageService.deleteImage(publicId);
+      updateData.images = updateData.images.filter(
+        (img) => img.publicId !== publicId
+      );
     }
-
-    // Update category counts
-    await Promise.all([
-      Category.findByIdAndUpdate(oldCategoryId, {
-        $inc: { productsCount: -1 },
-      }),
-      Category.findByIdAndUpdate(newCategoryId, { $inc: { productsCount: 1 } }),
-    ]);
   }
 
-  // Auto-update icon and color if name or category changed
-  let updateData = { ...otherUpdates };
-  if (name && (name !== product.name || newCategoryId)) {
-    const categoryForIcon = newCategoryId
-      ? await Category.findById(newCategoryId).select("name")
-      : await Category.findById(oldCategoryId).select("name");
-
-    updateData.icon = getProductIcon(name, categoryForIcon?.name || "");
-    updateData.color = getProductColor(name, categoryForIcon?.name || "");
-    updateData.name = name;
+  // Process tags and features
+  if (updateData.tags && typeof updateData.tags === "string") {
+    updateData.tags = updateData.tags.split(",").map((tag) => tag.trim());
   }
 
-  if (newCategoryId) {
-    updateData.category = newCategoryId;
+  if (updateData.features && typeof updateData.features === "string") {
+    updateData.features = updateData.features
+      .split(",")
+      .map((feature) => feature.trim());
   }
 
-  // DON'T update stock directly - it's managed via InventoryLedger
-  // Stock updates should only happen through inventory master
-
-  // Update product
-  product = await Product.findByIdAndUpdate(req.params.id, updateData, {
-    new: true,
-    runValidators: true,
-  }).populate("category", "name icon color");
+  const updatedProduct = await Product.findByIdAndUpdate(
+    productId,
+    updateData,
+    { new: true, runValidators: true }
+  ).populate("category");
 
   res.status(200).json({
     success: true,
-    data: product,
     message: "Product updated successfully",
+    data: updatedProduct,
   });
 });
 
-// @desc Delete product
-// @route DELETE /api/products/:id
-// @access Public
+// Delete product
 export const deleteProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findOne({
-    _id: req.params.id,
-    isDeleted: false,
-  });
+  const product = await Product.findById(req.params.id);
 
   if (!product) {
     return res.status(404).json({
@@ -276,16 +315,18 @@ export const deleteProduct = asyncHandler(async (req, res) => {
     });
   }
 
-  // Soft delete product
-  await Product.findByIdAndUpdate(req.params.id, {
-    isDeleted: true,
-    deletedAt: new Date(),
+  // Delete all product images
+  const allImages = [...product.images];
+  product.variants.forEach((variant) => {
+    allImages.push(...variant.images);
   });
 
-  // Update category product count
-  await Category.findByIdAndUpdate(product.category, {
-    $inc: { productsCount: -1 },
-  });
+  if (allImages.length > 0) {
+    const publicIds = allImages.map((img) => img.publicId);
+    await ImageService.deleteMultipleImages(publicIds);
+  }
+
+  await Product.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -293,131 +334,64 @@ export const deleteProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc Get product statistics
-// @route GET /api/products/stats
-// @access Public
-export const getProductStats = asyncHandler(async (req, res) => {
-  const [stats] = await Product.aggregate([
-    { $match: { isDeleted: false } },
-    {
-      $group: {
-        _id: null,
-        totalProducts: { $sum: 1 },
-        totalStock: { $sum: "$stock" },
-        averagePrice: { $avg: "$price" },
-        totalValue: { $sum: { $multiply: ["$price", "$stock"] } },
-        activeProducts: {
-          $sum: { $cond: [{ $eq: ["$status", "Active"] }, 1, 0] },
-        },
-        outOfStock: {
-          $sum: { $cond: [{ $eq: ["$stock", 0] }, 1, 0] },
-        },
-        lowStock: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $gt: ["$stock", 0] },
-                  { $lte: ["$stock", "$minStock"] },
-                ],
-              },
-              1,
-              0,
-            ],
-          },
-        },
-        featuredProducts: {
-          $sum: { $cond: ["$featured", 1, 0] },
-        },
-      },
-    },
-  ]);
+// Reorder product images
+export const reorderProductImages = asyncHandler(async (req, res) => {
+  const { imageOrder } = req.body;
 
-  // Get category-wise product count
-  const categoryStats = await Product.aggregate([
-    { $match: { isDeleted: false } },
-    {
-      $lookup: {
-        from: "categories",
-        localField: "category",
-        foreignField: "_id",
-        as: "categoryInfo",
-      },
-    },
-    { $unwind: "$categoryInfo" },
-    {
-      $group: {
-        _id: "$category",
-        categoryName: { $first: "$categoryInfo.name" },
-        productCount: { $sum: 1 },
-        totalStock: { $sum: "$stock" },
-        avgPrice: { $avg: "$price" },
-      },
-    },
-    { $sort: { productCount: -1 } },
-    { $limit: 10 },
-  ]);
+  const product = await Product.findById(req.params.id);
+  if (!product) {
+    return res.status(404).json({
+      success: false,
+      message: "Product not found",
+    });
+  }
 
-  // Get top products
-  const topProducts = await Product.find({ isDeleted: false })
-    .sort({ soldCount: -1, rating: -1 })
-    .limit(5)
-    .populate("category", "name")
-    .select("name price rating soldCount category");
+  // Reorder images based on provided order
+  const reorderedImages = imageOrder
+    .map((publicId, index) => {
+      const image = product.images.find((img) => img.publicId === publicId);
+      if (image) {
+        return {
+          ...image.toObject(),
+          sortOrder: index,
+          isPrimary: index === 0,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  product.images = reorderedImages;
+  await product.save();
 
   res.status(200).json({
     success: true,
-    data: {
-      overview: stats || {
-        totalProducts: 0,
-        totalStock: 0,
-        averagePrice: 0,
-        totalValue: 0,
-        activeProducts: 0,
-        outOfStock: 0,
-        lowStock: 0,
-        featuredProducts: 0,
-      },
-      categoryStats,
-      topProducts,
-    },
+    message: "Images reordered successfully",
+    data: product,
   });
 });
 
-// @desc Get products by category
-// @route GET /api/products/category/:categoryId
-// @access Public
-export const getProductsByCategory = asyncHandler(async (req, res) => {
-  const { categoryId } = req.params;
-  const { page = 1, limit = 10 } = req.query;
+// Set primary image
+export const setPrimaryImage = asyncHandler(async (req, res) => {
+  const { publicId } = req.body;
 
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const product = await Product.findById(req.params.id);
+  if (!product) {
+    return res.status(404).json({
+      success: false,
+      message: "Product not found",
+    });
+  }
 
-  const [products, total] = await Promise.all([
-    Product.find({
-      category: categoryId,
-      isDeleted: false,
-    })
-      .populate("category", "name icon color")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit)),
-    Product.countDocuments({
-      category: categoryId,
-      isDeleted: false,
-    }),
-  ]);
+  // Reset all images to non-primary
+  product.images.forEach((img) => {
+    img.isPrimary = img.publicId === publicId;
+  });
+
+  await product.save();
 
   res.status(200).json({
     success: true,
-    data: {
-      products,
-      pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / limit),
-        total,
-        limit: parseInt(limit),
-      },
-    },
+    message: "Primary image updated successfully",
   });
 });

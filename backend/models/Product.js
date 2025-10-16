@@ -1,68 +1,84 @@
 import mongoose from "mongoose";
 
+const imageSchema = new mongoose.Schema({
+  url: { type: String, required: true },
+  publicId: { type: String, required: true },
+  alt: { type: String, default: "" },
+  isPrimary: { type: Boolean, default: false },
+  sortOrder: { type: Number, default: 0 },
+  thumbnailUrl: String,
+  mediumUrl: String,
+  largeUrl: String,
+  uploadedAt: { type: Date, default: Date.now },
+});
+
+const variantSchema = new mongoose.Schema({
+  color: {
+    name: { type: String, required: true },
+    code: { type: String, required: true },
+  },
+  size: {
+    name: { type: String, required: true },
+    value: String,
+  },
+  price: { type: Number, required: true },
+  discountPrice: Number,
+  stock: { type: Number, required: true },
+  sku: { type: String, unique: true, sparse: true },
+  images: [imageSchema],
+  isActive: { type: Boolean, default: true },
+});
+
 const productSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: [true, "Product name is required"],
-      trim: true,
-    },
-    description: {
-      type: String,
-      required: [true, "Description is required"],
-      trim: true,
-    },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, required: true },
+    shortDescription: String,
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
       required: true,
     },
-    price: { type: Number, required: true, min: 0 },
-    originalPrice: { type: Number, min: 0 },
-    discount: { type: Number, default: 0, min: 0, max: 100 },
-    stock: { type: Number, default: 0, min: 0 },
-    sku: { type: String, trim: true, sparse: true },
-    brand: { type: String, trim: true },
-    status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+    brand: String,
+    images: [imageSchema],
+    variants: [variantSchema],
+    basePrice: { type: Number, required: true },
+    discountPrice: Number,
+    tags: [String],
+    features: [String],
+    specifications: [
+      {
+        key: String,
+        value: String,
+      },
+    ],
+    seoTitle: String,
+    seoDescription: String,
+    slug: { type: String, unique: true, sparse: true },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "draft", "archived"],
+      default: "draft",
+    },
+    totalStock: { type: Number, default: 0 },
+    soldCount: { type: Number, default: 0 },
+    viewCount: { type: Number, default: 0 },
     rating: { type: Number, default: 0, min: 0, max: 5 },
-    icon: { type: String, default: "📦" },
-    color: { type: String, default: "#4CAF50" },
-    slug: { type: String, lowercase: true, sparse: true },
-    isDeleted: { type: Boolean, default: false },
-    deletedAt: { type: Date },
-    // Simplified fields from your previous model
-    company: { type: String, trim: true },
-    place: { type: String, trim: true },
+    reviewCount: { type: Number, default: 0 },
+    featured: { type: Boolean, default: false },
+    trending: { type: Boolean, default: false },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
 
-productSchema.virtual("images", {
-  ref: "ProductImage",
-  localField: "_id",
-  foreignField: "product",
-});
+// Indexes for better performance
+productSchema.index({ name: "text", description: "text", tags: "text" });
+productSchema.index({ category: 1, status: 1 });
+productSchema.index({ slug: 1 });
+productSchema.index({ featured: 1 });
 
-productSchema.pre("save", function (next) {
-  if (this.isModified("name")) {
-    this.slug = this.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
-    if (!this.sku) {
-      const prefix = this.name.substring(0, 3).toUpperCase();
-      this.sku = `${prefix}-${Date.now().toString().slice(-6)}`;
-    }
-  }
-  next();
-});
-
-// Indexes
-productSchema.index({ name: 1 });
-productSchema.index({ category: 1 });
-productSchema.index({ isDeleted: 1 });
-productSchema.index({ slug: 1 }, { unique: true, sparse: true });
-productSchema.index({ sku: 1 }, { unique: true, sparse: true });
-
-const Product = mongoose.model("Product", productSchema);
-export default Product;
+export default mongoose.model("Product", productSchema);
