@@ -1,15 +1,13 @@
 // frontend/src/services/productService.js
-import axios from "axios";
+import api from "./api"; // Use the central api instance
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const API_URL = `${API_BASE_URL}/api/products`;
+const API_URL = "/products"; // Base path is now handled by api.js
 
 class ProductService {
   // Get all products with enhanced filtering
   async getProducts(params = {}) {
     try {
-      const response = await axios.get(API_URL, { params });
+      const response = await api.get(API_URL, { params });
       return response.data;
     } catch (error) {
       console.error("Error fetching products:", error);
@@ -20,7 +18,7 @@ class ProductService {
   // Get single product with images
   async getProduct(id) {
     try {
-      const response = await axios.get(`${API_URL}/${id}`);
+      const response = await api.get(`${API_URL}/${id}`);
       return response.data;
     } catch (error) {
       console.error("Error fetching product:", error);
@@ -31,11 +29,8 @@ class ProductService {
   // Create new product
   async createProduct(productData) {
     try {
-      const response = await axios.post(API_URL, productData, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      // 'Content-Type': 'application/json' is handled by api.js
+      const response = await api.post(API_URL, productData);
       return response.data;
     } catch (error) {
       console.error("Error creating product:", error);
@@ -46,11 +41,8 @@ class ProductService {
   // Update product
   async updateProduct(id, productData) {
     try {
-      const response = await axios.put(`${API_URL}/${id}`, productData, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      // 'Content-Type': 'application/json' is handled by api.js
+      const response = await api.put(`${API_URL}/${id}`, productData);
       return response.data;
     } catch (error) {
       console.error("Error updating product:", error);
@@ -61,7 +53,7 @@ class ProductService {
   // Delete product
   async deleteProduct(id) {
     try {
-      const response = await axios.delete(`${API_URL}/${id}`);
+      const response = await api.delete(`${API_URL}/${id}`);
       return response.data;
     } catch (error) {
       console.error("Error deleting product:", error);
@@ -72,11 +64,12 @@ class ProductService {
   // Upload single product image
   async uploadProductImage(productId, formData) {
     try {
-      const response = await axios.post(
+      const response = await api.post(
         `${API_URL}/${productId}/images`,
         formData,
         {
           headers: {
+            // Must override for file uploads
             "Content-Type": "multipart/form-data",
           },
         }
@@ -91,11 +84,12 @@ class ProductService {
   // Upload multiple product images
   async uploadMultipleProductImages(productId, formData) {
     try {
-      const response = await axios.post(
+      const response = await api.post(
         `${API_URL}/${productId}/images/multiple`,
         formData,
         {
           headers: {
+            // Must override for file uploads
             "Content-Type": "multipart/form-data",
           },
         }
@@ -110,7 +104,7 @@ class ProductService {
   // Get product images
   async getProductImages(productId) {
     try {
-      const response = await axios.get(`${API_URL}/${productId}/images`);
+      const response = await api.get(`${API_URL}/${productId}/images`);
       return response.data;
     } catch (error) {
       console.error("Error fetching product images:", error);
@@ -121,14 +115,10 @@ class ProductService {
   // Update product image
   async updateProductImage(imageId, updateData) {
     try {
-      const response = await axios.put(
+      // 'Content-Type': 'application/json' is handled by api.js
+      const response = await api.put(
         `${API_URL}/images/${imageId}`,
-        updateData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+        updateData
       );
       return response.data;
     } catch (error) {
@@ -140,7 +130,7 @@ class ProductService {
   // Delete product image
   async deleteProductImage(imageId) {
     try {
-      const response = await axios.delete(`${API_URL}/images/${imageId}`);
+      const response = await api.delete(`${API_URL}/images/${imageId}`);
       return response.data;
     } catch (error) {
       console.error("Error deleting product image:", error);
@@ -151,7 +141,7 @@ class ProductService {
   // Get product statistics
   async getProductStats() {
     try {
-      const response = await axios.get(`${API_URL}/stats`);
+      const response = await api.get(`${API_URL}/stats`);
       return response.data;
     } catch (error) {
       console.error("Error fetching product stats:", error);

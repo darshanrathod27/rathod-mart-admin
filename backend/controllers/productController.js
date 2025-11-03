@@ -199,14 +199,17 @@ export const getProducts = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: products,
-    pagination: {
-      current: Number(page),
-      pages: Math.ceil(total / Number(limit)),
-      total,
-      limit: Number(limit),
-      hasNext: skip + Number(limit) < total,
-      hasPrev: Number(page) > 1,
+    data: {
+      products: products,
+
+      pagination: {
+        current: Number(page),
+        pages: Math.ceil(total / Number(limit)),
+        total,
+        limit: Number(limit),
+        hasNext: skip + Number(limit) < total,
+        hasPrev: Number(page) > 1,
+      },
     },
   });
 });

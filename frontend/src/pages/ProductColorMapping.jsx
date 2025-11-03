@@ -63,6 +63,7 @@ const ProductColorMapping = () => {
         status: filterStatus,
         product: filterProduct,
       });
+      // This code is correct and expects { data: { mappings: [], pagination: {} } }
       setMappings(response.data.mappings);
       setRowCount(response.data.pagination.total);
     } catch (error) {
@@ -76,6 +77,7 @@ const ProductColorMapping = () => {
   useEffect(() => {
     const fetchProductsForFilter = async () => {
       try {
+        // This code is correct and expects { data: { products: [] } } after Fix 1
         const res = await productService.getProducts({ limit: 500 });
         setProducts(res.data.products);
       } catch (err) {
@@ -149,7 +151,7 @@ const ProductColorMapping = () => {
       field: "product",
       headerName: "Product Name",
       width: 250,
-      valueGetter: (value, row) => row.product?.name || "N/A",
+      valueGetter: (params) => params.row.product?.name || "N/A",
     },
     { field: "colorName", headerName: "Color Name", width: 150 },
     {
@@ -187,7 +189,7 @@ const ProductColorMapping = () => {
       headerName: "Created",
       width: 120,
       type: "date",
-      valueGetter: (value) => value && new Date(value),
+      valueGetter: (params) => params.value && new Date(params.value),
       renderCell: (params) =>
         new Date(params.value).toLocaleDateString("en-IN"),
     },

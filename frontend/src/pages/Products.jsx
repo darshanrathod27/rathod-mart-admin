@@ -83,7 +83,8 @@ const Products = () => {
         status: filterStatus,
       });
 
-      // Ensure images have proper URLs
+      // **THIS IS THE CORRECTED LOGIC YOU POSTED**
+      // It expects the response: { data: { products: [], pagination: {} } }
       const productsWithImageUrls = response.data.products.map((product) => ({
         ...product,
         images:
@@ -107,6 +108,7 @@ const Products = () => {
 
   const fetchCategories = useCallback(async () => {
     try {
+      // This correctly expects { data: { categories: [] } }
       const response = await categoryService.getCategories({ limit: 100 });
       setCategories(response.data.categories || []);
     } catch (error) {
@@ -157,6 +159,7 @@ const Products = () => {
 
   const handleEditProduct = async (product) => {
     try {
+      // This service call returns { data: ...product } directly
       const response = await productService.getProduct(product._id);
       setEditProduct(response.data);
       setOpenModal(true);
@@ -168,6 +171,7 @@ const Products = () => {
 
   const handleViewProduct = async (product) => {
     try {
+      // This service call returns { data: ...product } directly
       const response = await productService.getProduct(product._id);
       // Ensure images have proper URLs
       const productWithImageUrls = {
@@ -230,6 +234,7 @@ const Products = () => {
 
       // Handle image upload if provided
       if (image) {
+        // The create/update response returns { data: ...product }
         const productId = response.data._id;
         const imageFormData = new FormData();
         imageFormData.append("image", image);
@@ -318,7 +323,7 @@ const Products = () => {
       field: "category",
       headerName: "Category",
       width: 150,
-      valueGetter: (value) => value?.name || "N/A",
+      valueGetter: (params) => params.row.category?.name || "N/A",
       renderCell: (params) => (
         <Chip
           label={params.value}
@@ -332,6 +337,7 @@ const Products = () => {
       field: "price",
       headerName: "Price",
       width: 120,
+      valueGetter: (params) => params.row.basePrice, // Get price from basePrice
       renderCell: (params) => (
         <Typography variant="body2" fontWeight="bold" color="success.main">
           ₹{params.value?.toLocaleString("en-IN") || "0"}
@@ -342,6 +348,7 @@ const Products = () => {
       field: "stock",
       headerName: "Stock",
       width: 100,
+      valueGetter: (params) => params.row.totalStock, // Get stock from totalStock
       renderCell: (params) => (
         <Chip
           label={params.value || 0}

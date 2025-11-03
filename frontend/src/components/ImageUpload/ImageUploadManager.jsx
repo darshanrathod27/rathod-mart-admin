@@ -10,7 +10,6 @@ import {
   CardActions,
   Chip,
   LinearProgress,
-  Alert,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -30,7 +29,6 @@ import {
   DragIndicator as DragIcon,
 } from "@mui/icons-material";
 import { useDropzone } from "react-dropzone";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import toast from "react-hot-toast";
 
 const ImageUploadManager = ({
@@ -39,7 +37,6 @@ const ImageUploadManager = ({
   maxImages = 10,
   folder = "products",
   enableReorder = true,
-  enableCrop = true,
 }) => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
@@ -57,33 +54,25 @@ const ImageUploadManager = ({
 
       setUploading(true);
       const uploadPromises = acceptedFiles.map(async (file, index) => {
-        const formData = new FormData();
-        formData.append("image", file);
-        formData.append("folder", folder);
-
         try {
-          setUploadProgress((prev) => ({ ...prev, [file.name]: 0 }));
+          setUploadProgress((prev) => ({ ...prev, [file.name]: 50 }));
 
-          const response = await fetch("/api/upload/image", {
-            method: "POST",
-            body: formData,
-            onUploadProgress: (progressEvent) => {
-              const progress = Math.round(
-                (progressEvent.loaded * 100) / progressEvent.total
-              );
-              setUploadProgress((prev) => ({ ...prev, [file.name]: progress }));
-            },
-          });
+          // Simulate upload (replace with actual upload logic later)
+          await new Promise((resolve) => setTimeout(resolve, 1000));
 
-          if (!response.ok) throw new Error("Upload failed");
-
-          const result = await response.json();
-          return {
-            ...result.data,
+          const result = {
+            url: URL.createObjectURL(file),
+            publicId: `temp_${Date.now()}_${index}`,
+            alt: file.name.split(".")[0],
             isPrimary: images.length === 0 && index === 0,
             sortOrder: images.length + index,
-            alt: file.name.split(".")[0],
+            thumbnailUrl: URL.createObjectURL(file),
+            mediumUrl: URL.createObjectURL(file),
+            largeUrl: URL.createObjectURL(file),
           };
+
+          setUploadProgress((prev) => ({ ...prev, [file.name]: 100 }));
+          return result;
         } catch (error) {
           toast.error(`Failed to upload ${file.name}`);
           throw error;
@@ -108,7 +97,7 @@ const ImageUploadManager = ({
         setUploading(false);
       }
     },
-    [images, maxImages, folder, onImagesChange]
+    [images, maxImages, onImagesChange]
   );
 
   // Dropzone configuration
@@ -145,29 +134,6 @@ const ImageUploadManager = ({
     }));
     onImagesChange(updatedImages);
     toast.success("Primary image updated");
-  };
-
-  // Handle drag and drop reordering
-  const handleDragEnd = (result) => {
-    if (!result.destination) return;
-
-    const reorderedImages = Array.from(images);
-    const [reorderedItem] = reorderedImages.splice(result.source.index, 1);
-    reorderedImages.splice(result.destination.index, 0, reorderedItem);
-
-    // Update sort order
-    const updatedImages = reorderedImages.map((img, index) => ({
-      ...img,
-      sortOrder: index,
-      isPrimary:
-        index === 0
-          ? true
-          : img.isPrimary && index !== 0
-          ? false
-          : img.isPrimary,
-    }));
-
-    onImagesChange(updatedImages);
   };
 
   // Handle image editing
@@ -231,148 +197,92 @@ const ImageUploadManager = ({
 
       {/* Image Grid */}
       {images.length > 0 && (
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="images" direction="horizontal">
-            {(provided) => (
-              <Grid
-                container
-                spacing={2}
-                {...provided.droppableProps}
-                ref={provided.innerRef}
+        <Grid container spacing={2}>
+          {images.map((image, index) => (
+            <Grid item xs={12} sm={6} md={4} lg={3} key={image.publicId}>
+              <Card
+                sx={{
+                  position: "relative",
+                  boxShadow: 1,
+                  transition: "transform 0.2s ease",
+                }}
               >
-                {images.map((image, index) => (
-                  <Draggable
-                    key={image.publicId}
-                    draggableId={image.publicId}
-                    index={index}
-                    isDragDisabled={!enableReorder}
-                  >
-                    {(provided, snapshot) => (
-                      <Grid
-                        item
-                        xs={12}
-                        sm={6}
-                        md={4}
-                        lg={3}
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
+                {/* Primary Badge */}
+                {image.isPrimary && (
+                  <Chip
+                    label="Primary"
+                    size="small"
+                    color="primary"
+                    sx={{
+                      position: "absolute",
+                      top: 8,
+                      right: 8,
+                      zIndex: 2,
+                    }}
+                  />
+                )}
+
+                <CardMedia
+                  component="img"
+                  height="200"
+                  image={image.thumbnailUrl || image.url}
+                  alt={image.alt}
+                  sx={{
+                    objectFit: "cover",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setSelectedImage(image)}
+                />
+
+                <CardActions sx={{ p: 1, justifyContent: "space-between" }}>
+                  <Box>
+                    <Tooltip title="Set as primary">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleSetPrimary(image.publicId)}
+                        disabled={image.isPrimary}
                       >
-                        <Card
-                          sx={{
-                            position: "relative",
-                            transform: snapshot.isDragging
-                              ? "rotate(5deg)"
-                              : "none",
-                            boxShadow: snapshot.isDragging ? 3 : 1,
-                            transition: "transform 0.2s ease",
-                          }}
-                        >
-                          {/* Drag Handle */}
-                          {enableReorder && (
-                            <Box
-                              {...provided.dragHandleProps}
-                              sx={{
-                                position: "absolute",
-                                top: 4,
-                                left: 4,
-                                zIndex: 2,
-                                bgcolor: "rgba(0,0,0,0.5)",
-                                borderRadius: 1,
-                                p: 0.5,
-                              }}
-                            >
-                              <DragIcon sx={{ color: "white", fontSize: 16 }} />
-                            </Box>
-                          )}
+                        {image.isPrimary ? (
+                          <StarIcon color="primary" />
+                        ) : (
+                          <StarBorderIcon />
+                        )}
+                      </IconButton>
+                    </Tooltip>
 
-                          {/* Primary Badge */}
-                          {image.isPrimary && (
-                            <Chip
-                              label="Primary"
-                              size="small"
-                              color="primary"
-                              sx={{
-                                position: "absolute",
-                                top: 8,
-                                right: 8,
-                                zIndex: 2,
-                              }}
-                            />
-                          )}
+                    <Tooltip title="Edit image">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleEditImage(image)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
 
-                          <CardMedia
-                            component="img"
-                            height="200"
-                            image={image.thumbnailUrl || image.url}
-                            alt={image.alt}
-                            sx={{
-                              objectFit: "cover",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => setSelectedImage(image)}
-                          />
+                    <Tooltip title="View full size">
+                      <IconButton
+                        size="small"
+                        onClick={() => setSelectedImage(image)}
+                      >
+                        <ZoomIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
 
-                          <CardActions
-                            sx={{ p: 1, justifyContent: "space-between" }}
-                          >
-                            <Box>
-                              <Tooltip title="Set as primary">
-                                <IconButton
-                                  size="small"
-                                  onClick={() =>
-                                    handleSetPrimary(image.publicId)
-                                  }
-                                  disabled={image.isPrimary}
-                                >
-                                  {image.isPrimary ? (
-                                    <StarIcon color="primary" />
-                                  ) : (
-                                    <StarBorderIcon />
-                                  )}
-                                </IconButton>
-                              </Tooltip>
-
-                              <Tooltip title="Edit image">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleEditImage(image)}
-                                >
-                                  <EditIcon />
-                                </IconButton>
-                              </Tooltip>
-
-                              <Tooltip title="View full size">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => setSelectedImage(image)}
-                                >
-                                  <ZoomIcon />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-
-                            <Tooltip title="Delete image">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() =>
-                                  handleDeleteImage(image.publicId)
-                                }
-                              >
-                                <DeleteIcon />
-                              </IconButton>
-                            </Tooltip>
-                          </CardActions>
-                        </Card>
-                      </Grid>
-                    )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
-              </Grid>
-            )}
-          </Droppable>
-        </DragDropContext>
+                  <Tooltip title="Delete image">
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => handleDeleteImage(image.publicId)}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
       )}
 
       {/* Image Preview Dialog */}
@@ -382,15 +292,7 @@ const ImageUploadManager = ({
         maxWidth="lg"
         fullWidth
       >
-        <DialogTitle>
-          Image Preview
-          <IconButton
-            onClick={() => setSelectedImage(null)}
-            sx={{ position: "absolute", right: 8, top: 8 }}
-          >
-            <DeleteIcon />
-          </IconButton>
-        </DialogTitle>
+        <DialogTitle>Image Preview</DialogTitle>
         <DialogContent>
           {selectedImage && (
             <Box textAlign="center">
@@ -406,6 +308,9 @@ const ImageUploadManager = ({
             </Box>
           )}
         </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedImage(null)}>Close</Button>
+        </DialogActions>
       </Dialog>
 
       {/* Image Edit Dialog */}
