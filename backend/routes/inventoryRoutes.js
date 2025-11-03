@@ -1,34 +1,26 @@
-// backend/routes/inventoryRoutes.js
-
 import express from "express";
-import { body } from "express-validator";
-import {
-  addStock,
-  reduceStock,
-  getInventoryLedger,
-  getProductVariants,
-  getStockSummary,
-  getInventoryStats,
-} from "../controllers/inventoryController.js";
-// import { protect } from "../middleware/authMiddleware.js"; // Uncomment when auth is ready
-
 const router = express.Router();
 
-// Validation middleware
-const stockValidation = [
-  body("product", "Product ID is required").notEmpty().isMongoId(),
-  body("quantity", "Quantity must be a positive number")
-    .isFloat({ gt: 0 })
-    .toFloat(),
-  body("variant", "Invalid Variant ID").optional().isMongoId(),
+// Mock inventory data
+const mockInventory = [
+  { _id: "1", productId: "1", stock: 50, reserved: 5, available: 45 },
+  { _id: "2", productId: "2", stock: 30, reserved: 2, available: 28 },
 ];
 
-// Public routes (for now) - apply 'protect' middleware when ready
-router.post("/add-stock", stockValidation, addStock);
-router.post("/reduce-stock", stockValidation, reduceStock);
-router.get("/ledger", getInventoryLedger);
-router.get("/product-variants/:productId", getProductVariants);
-router.get("/stock-summary/:productId", getStockSummary);
-router.get("/stats", getInventoryStats);
+// GET /api/inventory
+router.get("/", (req, res) => {
+  try {
+    res.status(200).json({
+      success: true,
+      data: mockInventory,
+      total: mockInventory.length,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 export default router;

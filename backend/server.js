@@ -1,54 +1,48 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
+
+// --- FIX 2: Import database connection ---
 import connectDB from "./config/database.js";
-import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
-import { corsOptions } from "./middleware/corsMiddleware.js";
-import cookieParser from "cookie-parser";
-import compression from "compression";
 
 // Import routes
 import userRoutes from "./routes/userRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
-import productRoutes from "./routes/productRoutes.js"; // We only need to import this one for products
+import productRoutes from "./routes/productRoutes.js";
 import productSizeMappingRoutes from "./routes/productSizeMappingRoutes.js";
 import productColorMappingRoutes from "./routes/productColorMappingRoutes.js";
 import variantMasterRoutes from "./routes/variantMasterRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 
+// Load environment variables
 dotenv.config();
+
+// --- FIX 2: Connect to the database ---
 connectDB();
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
+
+// --- FIX 1: Correctly define __dirname ---
 const __dirname = path.dirname(__filename);
 
-// Middleware
-app.use(helmet());
-app.use(cors(corsOptions));
-app.use(morgan("dev"));
-app.use(compression());
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use(cookieParser());
+// Basic middleware
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "http://localhost:3000"],
+    credentials: true,
+  })
+);
 
-// Static files for serving uploaded images
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// API routes
-app.use("/api/users", userRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/products", productRoutes); // This one line now correctly handles BOTH product and product image routes.
-app.use("/api/product-size-mapping", productSizeMappingRoutes);
-app.use("/api/product-color-mapping", productColorMappingRoutes);
-app.use("/api/variant-master", variantMasterRoutes);
-app.use("/api/inventory", inventoryRoutes);
-
-// Health check endpoint
+// Test routes
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -57,11 +51,48 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Error handling middleware (should be last)
-app.use(notFound);
-app.use(errorHandler);
+app.get("/api/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "API is working",
+    data: {
+      server: "Rathod Mart Backend",
+      version: "1.0.0",
+    },
+  });
+});
+
+// API routes
+app.use("/api/users", userRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/product-size-mapping", productSizeMappingRoutes);
+app.use("/api/product-color-mapping", productColorMappingRoutes);
+app.use("/api/variant-master", variantMasterRoutes);
+app.use("/api/inventory", inventoryRoutes);
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    success: false,
+    message: err.message || "Something went wrong!",
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+  });
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔗 API test: http://localhost:${PORT}/api/test`);
+  console.log(`📊 Products: http://localhost:${PORT}/api/products`);
+  console.log(`📂 Categories: http://localhost:${PORT}/api/categories`);
 });

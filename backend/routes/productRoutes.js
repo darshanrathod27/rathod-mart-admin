@@ -1,56 +1,95 @@
 import express from "express";
-import { body } from "express-validator";
-import {
-  getProducts,
-  getProduct,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  getProductStats,
-  getProductsByCategory,
-} from "../controllers/productController.js";
-import productImageRoutes from "./productImageRoutes.js"; // **FIX:** Import image routes
-
 const router = express.Router();
 
-// --- Validation Rules (No change) ---
-const createProductValidation = [
-  body("name", "Product name must be between 2 and 200 characters").isLength({
-    min: 2,
-    max: 200,
-  }),
-  body(
-    "description",
-    "Description must be between 10 and 1000 characters"
-  ).isLength({ min: 10, max: 1000 }),
-  body("category", "A valid category is required").isMongoId(),
-  body("originalPrice", "Price must be a number greater than 0")
-    .isFloat({ gt: 0 })
-    .toFloat(),
-];
-const updateProductValidation = [
-  body("name", "Product name must be between 2 and 200 characters")
-    .optional()
-    .isLength({ min: 2, max: 200 }),
-  body("category", "Invalid category ID").optional().isMongoId(),
-  body("originalPrice", "Price must be a number greater than 0")
-    .optional()
-    .isFloat({ gt: 0 })
-    .toFloat(),
+// Mock data for testing
+const mockProducts = [
+  {
+    _id: "1",
+    name: "Sample Product 1",
+    description: "This is a sample product",
+    basePrice: 1000,
+    category: { _id: "1", name: "Category 1" },
+    status: "active",
+    images: [],
+    variants: [],
+  },
+  {
+    _id: "2",
+    name: "Sample Product 2",
+    description: "This is another sample product",
+    basePrice: 2000,
+    category: { _id: "2", name: "Category 2" },
+    status: "active",
+    images: [],
+    variants: [],
+  },
 ];
 
-// --- Main Product Routes ---
-router.route("/").get(getProducts).post(createProductValidation, createProduct);
-router.route("/stats").get(getProductStats);
-router.route("/category/:categoryId").get(getProductsByCategory);
-router
-  .route("/:id")
-  .get(getProduct)
-  .put(updateProductValidation, updateProduct)
-  .delete(deleteProduct);
+// GET /api/products - Get all products
+router.get("/", (req, res) => {
+  try {
+    res.status(200).json({
+      success: true,
+      data: mockProducts,
+      pagination: {
+        current: 1,
+        pages: 1,
+        total: mockProducts.length,
+        limit: 10,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
-// --- Nested Image Routes ---
-// **FIX:** This correctly nests the image routes under `/api/products`
-router.use("/", productImageRoutes);
+// GET /api/products/:id - Get single product
+router.get("/:id", (req, res) => {
+  try {
+    const product = mockProducts.find((p) => p._id === req.params.id);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      data: product,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+// POST /api/products - Create new product
+router.post("/", (req, res) => {
+  try {
+    const newProduct = {
+      _id: String(Date.now()),
+      ...req.body,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    mockProducts.push(newProduct);
+
+    res.status(201).json({
+      success: true,
+      message: "Product created successfully",
+      data: newProduct,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 export default router;

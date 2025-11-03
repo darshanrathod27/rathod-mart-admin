@@ -24,7 +24,7 @@ const variantSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   discountPrice: Number,
   stock: { type: Number, required: true },
-  sku: { type: String, unique: true, sparse: true },
+  sku: { type: String, sparse: true }, // Removed unique to fix duplicate index warning
   images: [imageSchema],
   isActive: { type: Boolean, default: true },
 });
@@ -54,7 +54,7 @@ const productSchema = new mongoose.Schema(
     ],
     seoTitle: String,
     seoDescription: String,
-    slug: { type: String, unique: true, sparse: true },
+    slug: { type: String, sparse: true }, // Removed unique to fix duplicate index warning
     status: {
       type: String,
       enum: ["active", "inactive", "draft", "archived"],
@@ -75,10 +75,10 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for better performance
+// Indexes for better performance (without duplicate warnings)
 productSchema.index({ name: "text", description: "text", tags: "text" });
 productSchema.index({ category: 1, status: 1 });
-productSchema.index({ slug: 1 });
 productSchema.index({ featured: 1 });
+productSchema.index({ trending: 1 });
 
 export default mongoose.model("Product", productSchema);
