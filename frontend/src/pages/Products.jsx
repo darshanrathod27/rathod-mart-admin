@@ -261,7 +261,7 @@ const Products = () => {
     setOpenImageUploadModal(false);
   }, [fetchProducts]);
 
-  // Enhanced column definitions
+  // ⭐⭐⭐ FIXED COLUMN DEFINITIONS - MUI v7 SYNTAX ⭐⭐⭐
   const columns = [
     {
       field: "images",
@@ -323,7 +323,18 @@ const Products = () => {
       field: "category",
       headerName: "Category",
       width: 150,
-      valueGetter: (params) => params.row.category?.name || "N/A",
+      // ✅ FIXED: MUI v7 signature (value, row) instead of (params)
+      valueGetter: (value, row) => {
+        // Safe access with null checks
+        if (!row) return "N/A";
+        if (row.category && typeof row.category === "object") {
+          return row.category.name || "Uncategorized";
+        }
+        if (row.category && typeof row.category === "string") {
+          return row.category;
+        }
+        return "N/A";
+      },
       renderCell: (params) => (
         <Chip
           label={params.value}
@@ -337,7 +348,11 @@ const Products = () => {
       field: "basePrice",
       headerName: "Price",
       width: 120,
-      valueGetter: (params) => params.row.basePrice, // Get price from basePrice
+      // ✅ FIXED: MUI v7 signature (value, row)
+      valueGetter: (value, row) => {
+        if (!row) return 0;
+        return row.basePrice || 0;
+      },
       renderCell: (params) => (
         <Typography variant="body2" fontWeight="bold" color="success.main">
           ₹{params.value?.toLocaleString("en-IN") || "0"}
@@ -348,9 +363,12 @@ const Products = () => {
       field: "totalStock",
       headerName: "Stock",
       width: 100,
-      valueGetter: (params) => params.row.totalStock,
+      // ✅ FIXED: MUI v7 signature (value, row)
+      valueGetter: (value, row) => {
+        if (!row) return 0;
+        return row.totalStock || 0;
+      },
       renderCell: (params) => (
-        // --- STOCK CELL CLICKABLE ---
         <Tooltip title="Manage Variant Stock">
           <Box
             onClick={() => handleManageStock(params.row)}
@@ -379,7 +397,7 @@ const Products = () => {
       width: 130,
       renderCell: (params) => (
         <Box display="flex" alignItems="center" gap={1}>
-          <Rating value={params.value || 0} size="small" readOnly />
+          <Rating value={params.row.rating || 0} size="small" readOnly />
           <Typography variant="caption">
             ({params.row.reviewCount || 0})
           </Typography>

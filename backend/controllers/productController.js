@@ -244,7 +244,6 @@ export const updateProduct = asyncHandler(async (req, res) => {
   }
 
   // FIX: tags and features are now arrays, remove string split logic
-  // (Assuming frontend sends arrays for tags and features)
   if (updateData.tags && !Array.isArray(updateData.tags)) {
     // Fallback if old string data is sent
     updateData.tags = updateData.tags.split(",").map((tag) => tag.trim());
