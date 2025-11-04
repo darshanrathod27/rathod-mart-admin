@@ -83,8 +83,7 @@ const Products = () => {
         status: filterStatus,
       });
 
-      // **THIS IS THE CORRECTED LOGIC YOU POSTED**
-      // It expects the response: { data: { products: [], pagination: {} } }
+      // Ensure images have proper URLs
       const productsWithImageUrls = response.data.products.map((product) => ({
         ...product,
         images:
@@ -222,6 +221,7 @@ const Products = () => {
   };
 
   const handleFormSubmit = async (formData) => {
+    // FormData image logic is for single main image, which you can keep or remove
     const { image, ...productData } = formData;
     try {
       const response = editProduct
@@ -232,7 +232,7 @@ const Products = () => {
         `Product ${editProduct ? "updated" : "created"} successfully!`
       );
 
-      // Handle image upload if provided
+      // Handle image upload if provided (This is for the old single image logic)
       if (image) {
         // The create/update response returns { data: ...product }
         const productId = response.data._id;
@@ -334,7 +334,7 @@ const Products = () => {
       ),
     },
     {
-      field: "price",
+      field: "basePrice",
       headerName: "Price",
       width: 120,
       valueGetter: (params) => params.row.basePrice, // Get price from basePrice
@@ -345,23 +345,32 @@ const Products = () => {
       ),
     },
     {
-      field: "stock",
+      field: "totalStock",
       headerName: "Stock",
       width: 100,
-      valueGetter: (params) => params.row.totalStock, // Get stock from totalStock
+      valueGetter: (params) => params.row.totalStock,
       renderCell: (params) => (
-        <Chip
-          label={params.value || 0}
-          size="small"
-          color={
-            (params.value || 0) > 10
-              ? "success"
-              : (params.value || 0) > 0
-              ? "warning"
-              : "error"
-          }
-          variant="filled"
-        />
+        // --- STOCK CELL CLICKABLE ---
+        <Tooltip title="Manage Variant Stock">
+          <Box
+            onClick={() => handleManageStock(params.row)}
+            sx={{ cursor: "pointer", width: "100%" }}
+          >
+            <Chip
+              label={params.value || 0}
+              size="small"
+              color={
+                (params.value || 0) > 10
+                  ? "success"
+                  : (params.value || 0) > 0
+                  ? "warning"
+                  : "error"
+              }
+              variant="filled"
+              sx={{ width: "80px" }}
+            />
+          </Box>
+        </Tooltip>
       ),
     },
     {
@@ -371,7 +380,9 @@ const Products = () => {
       renderCell: (params) => (
         <Box display="flex" alignItems="center" gap={1}>
           <Rating value={params.value || 0} size="small" readOnly />
-          <Typography variant="caption">({params.value || 0})</Typography>
+          <Typography variant="caption">
+            ({params.row.reviewCount || 0})
+          </Typography>
         </Box>
       ),
     },
@@ -382,7 +393,7 @@ const Products = () => {
       renderCell: (params) => (
         <Chip
           label={params.value}
-          color={params.value === "Active" ? "success" : "warning"}
+          color={params.value === "active" ? "success" : "warning"}
           size="small"
           variant="filled"
         />
@@ -481,8 +492,9 @@ const Products = () => {
                 <MenuItem value="">
                   <em>All Status</em>
                 </MenuItem>
-                <MenuItem value="Active">Active</MenuItem>
-                <MenuItem value="Inactive">Inactive</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+                <MenuItem value="draft">Draft</MenuItem>
               </Select>
             </FormControl>
             <Button

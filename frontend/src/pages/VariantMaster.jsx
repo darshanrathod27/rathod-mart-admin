@@ -59,7 +59,9 @@ const VariantMaster = () => {
         search: debouncedSearchTerm,
         status: filterStatus,
       });
+      // This is correct: response.data.variants
       setVariants(response.data.variants);
+      // This is correct: response.data.pagination.total
       setRowCount(response.data.pagination.total);
     } catch (error) {
       console.error("Failed to fetch variants:", error);
@@ -136,19 +138,19 @@ const VariantMaster = () => {
       field: "product",
       headerName: "Product Name",
       width: 200,
-      valueGetter: (value, row) => row.product?.name || "N/A",
+      valueGetter: (params) => params.row.product?.name || "N/A",
     },
     {
       field: "size",
       headerName: "Size",
       width: 120,
-      valueGetter: (value, row) => row.size?.sizeName || "N/A",
+      valueGetter: (params) => params.row.size?.sizeName || "N/A",
     },
     {
       field: "color",
       headerName: "Color",
       width: 120,
-      valueGetter: (value, row) => row.color?.colorName || "N/A",
+      valueGetter: (params) => params.row.color?.colorName || "N/A",
     },
     {
       field: "price",
@@ -174,7 +176,7 @@ const VariantMaster = () => {
       headerName: "Created",
       width: 120,
       type: "date",
-      valueGetter: (value) => value && new Date(value),
+      valueGetter: (params) => params.value && new Date(params.value),
       renderCell: (params) => {
         if (!params.value) return "N/A";
         return new Date(params.value).toLocaleDateString("en-IN");

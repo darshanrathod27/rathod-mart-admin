@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback } from "react"; // Removed useRef
 import {
   Box,
   Typography,
@@ -42,7 +42,7 @@ const ImageUploadManager = ({
   const [uploadProgress, setUploadProgress] = useState({});
   const [selectedImage, setSelectedImage] = useState(null);
   const [editingImage, setEditingImage] = useState(null);
-  const fileInputRef = useRef(null);
+  // const fileInputRef = useRef(null); // --- REMOVED ---
 
   // Handle file upload
   const handleFileUpload = useCallback(
@@ -108,6 +108,7 @@ const ImageUploadManager = ({
     },
     maxSize: 10 * 1024 * 1024, // 10MB
     disabled: uploading || images.length >= maxImages,
+    // 'onClick' is handled by getRootProps, no need to add it manually
   });
 
   // Handle image deletion
@@ -156,7 +157,7 @@ const ImageUploadManager = ({
         Product Images ({images.length}/{maxImages})
       </Typography>
 
-      {/* Upload Area */}
+      {/* Upload Area - onClick handler removed to let useDropzone handle it */}
       <Box
         {...getRootProps()}
         sx={{
@@ -171,7 +172,8 @@ const ImageUploadManager = ({
           transition: "all 0.2s ease",
         }}
       >
-        <input {...getInputProps()} ref={fileInputRef} />
+        {/* --- FIX: Removed ref={fileInputRef} --- */}
+        <input {...getInputProps()} />
         <UploadIcon sx={{ fontSize: 48, color: "text.secondary", mb: 1 }} />
         <Typography variant="h6" gutterBottom>
           {isDragActive

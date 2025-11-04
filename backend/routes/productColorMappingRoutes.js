@@ -1,26 +1,23 @@
 import express from "express";
+import {
+  getColorMappings,
+  getColorMapping,
+  createColorMapping,
+  updateColorMapping,
+  deleteColorMapping,
+  getColorMappingsByProduct,
+} from "../controllers/productColorMappingController.js";
+
 const router = express.Router();
 
-// Mock color mapping data
-const mockColorMappings = [
-  { _id: "1", productId: "1", color: "Red", colorCode: "#FF0000", images: [] },
-  { _id: "2", productId: "2", color: "Blue", colorCode: "#0000FF", images: [] },
-];
+router.route("/").get(getColorMappings).post(createColorMapping);
 
-// GET /api/product-color-mapping
-router.get("/", (req, res) => {
-  try {
-    res.status(200).json({
-      success: true,
-      data: mockColorMappings,
-      total: mockColorMappings.length,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-});
+router.route("/product/:productId").get(getColorMappingsByProduct);
+
+router
+  .route("/:id")
+  .get(getColorMapping)
+  .put(updateColorMapping)
+  .delete(deleteColorMapping);
 
 export default router;

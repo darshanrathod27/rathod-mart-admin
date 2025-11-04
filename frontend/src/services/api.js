@@ -1,8 +1,10 @@
 import axios from "axios";
 
-// Use environment variable or default to localhost:5000
+// Fix environment variable usage and add fallback
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_BASE_URL ||
+  "http://localhost:5000";
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
@@ -10,21 +12,27 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
   withCredentials: true,
-  timeout: 10000, // 10 second timeout
+  timeout: 30000, // Increase timeout to 30 seconds
 });
 
-// Request interceptor
+// Enhanced request interceptor
 api.interceptors.request.use(
   (config) => {
-    // Add auth token if exists
     const token = sessionStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Log request for debugging
+    // Add timestamp to prevent caching
+    config.params = {
+      ...config.params,
+      _t: Date.now(),
+    };
+
     console.log(
-      `🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`
+      `🚀 API Request: ${config.method?.toUpperCase()} ${config.baseURL}${
+        config.url
+      }`
     );
     return config;
   },
@@ -34,7 +42,7 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor
+// Enhanced response interceptor with better error handling
 api.interceptors.response.use(
   (response) => {
     console.log(`✅ API Response: ${response.config.url} - ${response.status}`);
@@ -46,12 +54,24 @@ api.interceptors.response.use(
     const url = error.config?.url;
 
     console.error(`❌ API Error: ${url} - Status: ${status} - ${message}`);
+    console.error("Full error:", error);
 
-    // Handle authentication errors
+    // Handle different error types
+    if (!error.response) {
+      // Network error
+      console.error("Network Error: Cannot connect to server");
+      return Promise.reject(
+        new Error(
+          "Cannot connect to server. Please check if the backend is running."
+        )
+      );
+    }
+
     if (status === 401) {
       sessionStorage.removeItem("isAuthenticated");
       sessionStorage.removeItem("token");
-      window.location.href = "/login";
+      // Don't redirect immediately, let components handle it
+      console.warn("Authentication required");
     }
 
     return Promise.reject(error);
