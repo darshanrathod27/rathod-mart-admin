@@ -23,7 +23,6 @@ import { Save as SaveIcon, Add as AddIcon } from "@mui/icons-material";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
-// import toast from "react-hot-toast"; // Not used here
 import ImageUploadManager from "../ImageUpload/ImageUploadManager";
 // import VariantManager from "./VariantManager"; // --- REMOVED ---
 
@@ -48,13 +47,20 @@ const productSchema = yup.object({
   discountPercentage: yup
     .number()
     .min(0, "Discount must be at least 0%")
-    .max(100, "Discount cannot exceed 100%"),
+    .max(100, "Discount cannot exceed 100%")
+    .nullable(true)
+    .transform((value) => (!!value ? value : null)),
 });
 
 // Helper to get initial discount percentage
 const getInitialDiscountPerc = (initialData) => {
-  if (!initialData || !initialData.basePrice || !initialData.discountPrice)
-    return 0;
+  if (
+    !initialData ||
+    !initialData.basePrice ||
+    initialData.discountPrice === null ||
+    initialData.discountPrice === undefined
+  )
+    return ""; // Return empty string instead of 0
   if (initialData.basePrice === 0) return 0;
   const perc =
     (100 * (initialData.basePrice - initialData.discountPrice)) /
@@ -108,6 +114,11 @@ const ProductForm = React.memo(
       if (!isNaN(base) && !isNaN(perc) && perc >= 0 && perc <= 100) {
         const newDiscountPrice = base - (base * perc) / 100;
         setValue("discountPrice", newDiscountPrice.toFixed(2), {
+          shouldValidate: true,
+        });
+      } else if (!isNaN(base) && (isNaN(perc) || perc === 0)) {
+        // If discount % is empty or 0, set price to base
+        setValue("discountPrice", base.toFixed(2), {
           shouldValidate: true,
         });
       }
