@@ -12,22 +12,8 @@ const imageSchema = new mongoose.Schema({
   uploadedAt: { type: Date, default: Date.now },
 });
 
-const variantSchema = new mongoose.Schema({
-  color: {
-    name: { type: String, required: true },
-    code: { type: String, required: true },
-  },
-  size: {
-    name: { type: String, required: true },
-    value: String,
-  },
-  price: { type: Number, required: true },
-  discountPrice: Number,
-  stock: { type: Number, required: true },
-  sku: { type: String, sparse: true }, // Removed unique to fix duplicate index warning
-  images: [imageSchema],
-  isActive: { type: Boolean, default: true },
-});
+// --- VARIANT SCHEMA REMOVED ---
+// const variantSchema = new mongoose.Schema({ ... });
 
 const productSchema = new mongoose.Schema(
   {
@@ -41,7 +27,8 @@ const productSchema = new mongoose.Schema(
     },
     brand: String,
     images: [imageSchema],
-    variants: [variantSchema],
+    // --- VARIANTS FIELD REMOVED ---
+    // variants: [variantSchema],
     basePrice: { type: Number, required: true },
     discountPrice: Number,
     tags: [String],
@@ -54,12 +41,13 @@ const productSchema = new mongoose.Schema(
     ],
     seoTitle: String,
     seoDescription: String,
-    slug: { type: String, sparse: true }, // Removed unique to fix duplicate index warning
+    slug: { type: String, sparse: true },
     status: {
       type: String,
       enum: ["active", "inactive", "draft", "archived"],
       default: "draft",
     },
+    // Stock aur Rating fields already hain, jo perfect hai
     totalStock: { type: Number, default: 0 },
     soldCount: { type: Number, default: 0 },
     viewCount: { type: Number, default: 0 },

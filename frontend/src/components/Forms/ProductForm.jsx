@@ -17,15 +17,15 @@ import {
   Divider,
   Tabs,
   Tab,
-  Alert,
+  InputAdornment, // Added for discount %
 } from "@mui/material";
 import { Save as SaveIcon, Add as AddIcon } from "@mui/icons-material";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
-import toast from "react-hot-toast";
+// import toast from "react-hot-toast"; // Not used here
 import ImageUploadManager from "../ImageUpload/ImageUploadManager";
-import VariantManager from "./VariantManager";
+// import VariantManager from "./VariantManager"; // --- REMOVED ---
 
 // Validation schema
 const productSchema = yup.object({
@@ -44,312 +44,304 @@ const productSchema = yup.object({
     .min(0, "Price must be positive"),
   brand: yup.string(),
   shortDescription: yup.string().max(200, "Short description too long"),
-  discountPrice: yup
+  discountPrice: yup.number().min(0, "Discount price must be positive"),
+  discountPercentage: yup
     .number()
-    .min(0, "Discount price must be positive")
-    .test(
-      "discount-less-than-base",
-      "Discount price must be less than base price",
-      function (value) {
-        return !value || value < this.parent.basePrice;
-      }
-    ),
+    .min(0, "Discount must be at least 0%")
+    .max(100, "Discount cannot exceed 100%"),
 });
 
-const ProductForm = ({
-  initialData = null,
-  onSubmit,
-  loading = false,
-  categories = [],
-}) => {
-  const [activeTab, setActiveTab] = useState(0);
-  const [images, setImages] = useState(initialData?.images || []);
-  const [variants, setVariants] = useState(initialData?.variants || []);
-  const [tags, setTags] = useState(initialData?.tags || []);
-  const [features, setFeatures] = useState(initialData?.features || []);
-  const [specifications, setSpecifications] = useState(
-    initialData?.specifications || []
-  );
+// Helper to get initial discount percentage
+const getInitialDiscountPerc = (initialData) => {
+  if (!initialData || !initialData.basePrice || !initialData.discountPrice)
+    return 0;
+  if (initialData.basePrice === 0) return 0;
+  const perc =
+    (100 * (initialData.basePrice - initialData.discountPrice)) /
+    initialData.basePrice;
+  return perc.toFixed(0);
+};
 
-  const {
-    control,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm({
-    resolver: yupResolver(productSchema),
-    defaultValues: {
-      name: initialData?.name || "",
-      description: initialData?.description || "",
-      shortDescription: initialData?.shortDescription || "",
-      category: initialData?.category?._id || "",
-      brand: initialData?.brand || "",
-      basePrice: initialData?.basePrice || 0,
-      discountPrice: initialData?.discountPrice || 0,
-      status: initialData?.status || "draft",
-      featured: initialData?.featured || false,
-      trending: initialData?.trending || false,
-    },
-  });
+// --- FIX for typing bug: Wrap component in React.memo ---
+const ProductForm = React.memo(
+  ({ initialData = null, onSubmit, loading = false, categories = [] }) => {
+    const [activeTab, setActiveTab] = useState(0);
+    const [images, setImages] = useState(initialData?.images || []);
+    // const [variants, setVariants] = useState(initialData?.variants || []); // --- REMOVED ---
+    const [tags, setTags] = useState(initialData?.tags || []);
+    const [features, setFeatures] = useState(initialData?.features || []);
+    // const [specifications, setSpecifications] = useState( ... ); // --- REMOVED ---
 
-  const handleFormSubmit = (data) => {
-    const formData = {
-      ...data,
-      images,
-      variants,
-      tags,
-      features,
-      specifications,
-      totalStock: variants.reduce(
-        (sum, variant) => sum + (variant.stock || 0),
-        0
-      ),
+    const {
+      control,
+      handleSubmit,
+      watch,
+      setValue,
+      formState: { errors },
+    } = useForm({
+      resolver: yupResolver(productSchema),
+      defaultValues: {
+        name: initialData?.name || "",
+        description: initialData?.description || "",
+        shortDescription: initialData?.shortDescription || "",
+        category: initialData?.category?._id || "",
+        brand: initialData?.brand || "",
+        basePrice: initialData?.basePrice || 0,
+        discountPrice: initialData?.discountPrice || 0,
+        discountPercentage: getInitialDiscountPerc(initialData), // --- ADDED ---
+        status: initialData?.status || "draft",
+        featured: initialData?.featured || false,
+        trending: initialData?.trending || false,
+      },
+    });
+
+    // --- ADDED: Watch for price/discount changes ---
+    const [basePrice, discountPercentage] = watch([
+      "basePrice",
+      "discountPercentage",
+    ]);
+
+    // --- ADDED: Calculate discount price automatically ---
+    useEffect(() => {
+      const base = parseFloat(basePrice);
+      const perc = parseFloat(discountPercentage);
+      if (!isNaN(base) && !isNaN(perc) && perc >= 0 && perc <= 100) {
+        const newDiscountPrice = base - (base * perc) / 100;
+        setValue("discountPrice", newDiscountPrice.toFixed(2), {
+          shouldValidate: true,
+        });
+      }
+    }, [basePrice, discountPercentage, setValue]);
+
+    const handleFormSubmit = (data) => {
+      const formData = {
+        ...data,
+        images,
+        // variants, // --- REMOVED ---
+        tags,
+        features,
+        // specifications, // --- REMOVED ---
+        // totalStock, // --- REMOVED ---
+      };
+      onSubmit(formData);
     };
 
-    onSubmit(formData);
-  };
+    // --- REMOVED: specification functions (add, update, remove) ---
 
-  const addSpecification = () => {
-    setSpecifications([...specifications, { key: "", value: "" }]);
-  };
+    const TabPanel = ({ children, value, index }) => (
+      <div hidden={value !== index}>
+        {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
+      </div>
+    );
 
-  const updateSpecification = (index, field, value) => {
-    const updated = [...specifications];
-    updated[index][field] = value;
-    setSpecifications(updated);
-  };
+    return (
+      <Paper elevation={3} sx={{ p: 3, maxHeight: "70vh", overflowY: "auto" }}>
+        <Typography variant="h5" gutterBottom>
+          {initialData ? "Edit Product" : "Create New Product"}
+        </Typography>
 
-  const removeSpecification = (index) => {
-    setSpecifications(specifications.filter((_, i) => i !== index));
-  };
+        <form onSubmit={handleSubmit(handleFormSubmit)}>
+          <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
+            <Tabs
+              value={activeTab}
+              onChange={(e, newValue) => setActiveTab(newValue)}
+            >
+              <Tab label="Basic Info" />
+              <Tab label="Images" />
+              {/* <Tab label="Variants" /> */} {/* --- REMOVED --- */}
+              <Tab label="Details" />
+              <Tab label="SEO & Settings" />
+            </Tabs>
+          </Box>
 
-  const TabPanel = ({ children, value, index }) => (
-    <div hidden={value !== index}>
-      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
-    </div>
-  );
+          {/* Basic Information Tab */}
+          <TabPanel value={activeTab} index={0}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={8}>
+                <Controller
+                  name="name"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Product Name"
+                      error={!!errors.name}
+                      helperText={errors.name?.message}
+                      margin="normal"
+                    />
+                  )}
+                />
 
-  return (
-    <Paper elevation={3} sx={{ p: 3 }}>
-      <Typography variant="h5" gutterBottom>
-        {initialData ? "Edit Product" : "Create New Product"}
-      </Typography>
+                <Controller
+                  name="shortDescription"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Short Description"
+                      error={!!errors.shortDescription}
+                      helperText={errors.shortDescription?.message}
+                      margin="normal"
+                      multiline
+                      rows={2}
+                    />
+                  )}
+                />
 
-      <form onSubmit={handleSubmit(handleFormSubmit)}>
-        <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-          <Tabs
-            value={activeTab}
-            onChange={(e, newValue) => setActiveTab(newValue)}
-          >
-            <Tab label="Basic Info" />
-            <Tab label="Images" />
-            <Tab label="Variants" />
-            <Tab label="Details" />
-            <Tab label="SEO & Settings" />
-          </Tabs>
-        </Box>
+                <Controller
+                  name="description"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Full Description"
+                      error={!!errors.description}
+                      helperText={errors.description?.message}
+                      margin="normal"
+                      multiline
+                      rows={4}
+                    />
+                  )}
+                />
+              </Grid>
 
-        {/* Basic Information Tab */}
-        <TabPanel value={activeTab} index={0}>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={8}>
-              <Controller
-                name="name"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Product Name"
-                    error={!!errors.name}
-                    helperText={errors.name?.message}
-                    margin="normal"
-                  />
-                )}
-              />
+              <Grid item xs={12} md={4}>
+                <Controller
+                  name="category"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl
+                      fullWidth
+                      margin="normal"
+                      error={!!errors.category}
+                    >
+                      <InputLabel>Category</InputLabel>
+                      <Select {...field} label="Category">
+                        {categories.map((cat) => (
+                          <MenuItem key={cat._id} value={cat._id}>
+                            {cat.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                />
 
-              <Controller
-                name="shortDescription"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Short Description"
-                    error={!!errors.shortDescription}
-                    helperText={errors.shortDescription?.message}
-                    margin="normal"
-                    multiline
-                    rows={2}
-                  />
-                )}
-              />
+                <Controller
+                  name="brand"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Brand"
+                      margin="normal"
+                    />
+                  )}
+                />
 
-              <Controller
-                name="description"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Full Description"
-                    error={!!errors.description}
-                    helperText={errors.description?.message}
-                    margin="normal"
-                    multiline
-                    rows={4}
-                  />
-                )}
-              />
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <Controller
-                name="category"
-                control={control}
-                render={({ field }) => (
-                  <FormControl
-                    fullWidth
-                    margin="normal"
-                    error={!!errors.category}
-                  >
-                    <InputLabel>Category</InputLabel>
-                    <Select {...field} label="Category">
-                      {categories.map((cat) => (
-                        <MenuItem key={cat._id} value={cat._id}>
-                          {cat.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-              />
-
-              <Controller
-                name="brand"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Brand"
-                    margin="normal"
-                  />
-                )}
-              />
-
-              <Grid container spacing={2}>
-                <Grid item xs={6}>
-                  <Controller
-                    name="basePrice"
-                    control={control}
-                    render={({ field }) => (
-                      <TextField
-                        {...field}
-                        fullWidth
-                        label="Base Price"
-                        type="number"
-                        error={!!errors.basePrice}
-                        helperText={errors.basePrice?.message}
-                        margin="normal"
-                        InputProps={{
-                          startAdornment: (
-                            <Typography sx={{ mr: 1 }}>₹</Typography>
-                          ),
-                        }}
-                      />
-                    )}
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <Controller
-                    name="discountPrice"
-                    control={control}
-                    render={({ field }) => (
-                      <TextField
-                        {...field}
-                        fullWidth
-                        label="Discount Price"
-                        type="number"
-                        error={!!errors.discountPrice}
-                        helperText={errors.discountPrice?.message}
-                        margin="normal"
-                        InputProps={{
-                          startAdornment: (
-                            <Typography sx={{ mr: 1 }}>₹</Typography>
-                          ),
-                        }}
-                      />
-                    )}
-                  />
+                {/* --- PRICE GRID UPDATED --- */}
+                <Grid container spacing={2}>
+                  <Grid item xs={6} md={4}>
+                    <Controller
+                      name="basePrice"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Base Price"
+                          type="number"
+                          error={!!errors.basePrice}
+                          helperText={errors.basePrice?.message}
+                          margin="normal"
+                          InputProps={{
+                            startAdornment: (
+                              <Typography sx={{ mr: 1 }}>₹</Typography>
+                            ),
+                          }}
+                        />
+                      )}
+                    />
+                  </Grid>
+                  <Grid item xs={6} md={4}>
+                    <Controller
+                      name="discountPercentage"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Discount %"
+                          type="number"
+                          error={!!errors.discountPercentage}
+                          helperText={errors.discountPercentage?.message}
+                          margin="normal"
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">%</InputAdornment>
+                            ),
+                          }}
+                        />
+                      )}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Controller
+                      name="discountPrice"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Discount Price"
+                          type="number"
+                          error={!!errors.discountPrice}
+                          helperText={errors.discountPrice?.message}
+                          margin="normal"
+                          InputProps={{
+                            readOnly: true, // Make it read-only
+                            startAdornment: (
+                              <Typography sx={{ mr: 1 }}>₹</Typography>
+                            ),
+                          }}
+                        />
+                      )}
+                    />
+                  </Grid>
                 </Grid>
               </Grid>
             </Grid>
-          </Grid>
-        </TabPanel>
+          </TabPanel>
 
-        {/* Images Tab */}
-        <TabPanel value={activeTab} index={1}>
-          <ImageUploadManager
-            images={images}
-            onImagesChange={setImages}
-            maxImages={10}
-            folder="products"
-          />
-        </TabPanel>
+          {/* Images Tab */}
+          <TabPanel value={activeTab} index={1}>
+            <ImageUploadManager
+              images={images}
+              onImagesChange={setImages}
+              maxImages={10}
+              folder="products"
+            />
+          </TabPanel>
 
-        {/* Variants Tab */}
-        <TabPanel value={activeTab} index={2}>
-          <VariantManager
-            variants={variants}
-            onVariantsChange={setVariants}
-            productName={watch("name")}
-          />
-        </TabPanel>
+          {/* Variants Tab --- REMOVED --- */}
 
-        {/* Details Tab */}
-        <TabPanel value={activeTab} index={3}>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="h6" gutterBottom>
-                Tags
-              </Typography>
-              <Autocomplete
-                multiple
-                freeSolo
-                options={[]}
-                value={tags}
-                onChange={(e, newTags) => setTags(newTags)}
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip
-                      variant="outlined"
-                      label={option}
-                      {...getTagProps({ index })}
-                      key={index}
-                    />
-                  ))
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    placeholder="Add tags..."
-                    helperText="Press Enter to add tags"
-                  />
-                )}
-              />
-
-              <Box sx={{ mt: 3 }}>
+          {/* Details Tab (Index updated to 2) */}
+          <TabPanel value={activeTab} index={2}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
                 <Typography variant="h6" gutterBottom>
-                  Features
+                  Tags
                 </Typography>
                 <Autocomplete
                   multiple
                   freeSolo
                   options={[]}
-                  value={features}
-                  onChange={(e, newFeatures) => setFeatures(newFeatures)}
+                  value={tags}
+                  onChange={(e, newTags) => setTags(newTags)}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
                       <Chip
@@ -363,135 +355,118 @@ const ProductForm = ({
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      placeholder="Add features..."
-                      helperText="Press Enter to add features"
+                      placeholder="Add tags..."
+                      helperText="Press Enter to add tags"
                     />
                   )}
                 />
-              </Box>
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <Box
-                sx={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  mb: 2,
-                }}
-              >
-                <Typography variant="h6">Specifications</Typography>
-                <Button
-                  startIcon={<AddIcon />}
-                  onClick={addSpecification}
-                  size="small"
-                >
-                  Add Spec
-                </Button>
-              </Box>
-
-              {specifications.map((spec, index) => (
-                <Box key={index} sx={{ display: "flex", gap: 2, mb: 2 }}>
-                  <TextField
-                    fullWidth
-                    label="Specification"
-                    value={spec.key}
-                    onChange={(e) =>
-                      updateSpecification(index, "key", e.target.value)
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Box sx={{ mt: 0 }}>
+                  <Typography variant="h6" gutterBottom>
+                    Features
+                  </Typography>
+                  <Autocomplete
+                    multiple
+                    freeSolo
+                    options={[]}
+                    value={features}
+                    onChange={(e, newFeatures) => setFeatures(newFeatures)}
+                    renderTags={(value, getTagProps) =>
+                      value.map((option, index) => (
+                        <Chip
+                          variant="outlined"
+                          label={option}
+                          {...getTagProps({ index })}
+                          key={index}
+                        />
+                      ))
                     }
-                    size="small"
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Add features..."
+                        helperText="Press Enter to add features"
+                      />
+                    )}
                   />
-                  <TextField
-                    fullWidth
-                    label="Value"
-                    value={spec.value}
-                    onChange={(e) =>
-                      updateSpecification(index, "value", e.target.value)
-                    }
-                    size="small"
-                  />
-                  <Button
-                    color="error"
-                    onClick={() => removeSpecification(index)}
-                    size="small"
-                  >
-                    Remove
-                  </Button>
                 </Box>
-              ))}
+              </Grid>
+
+              {/* --- SPECIFICATIONS REMOVED --- */}
             </Grid>
-          </Grid>
-        </TabPanel>
+          </TabPanel>
 
-        {/* SEO & Settings Tab */}
-        <TabPanel value={activeTab} index={4}>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Controller
-                name="status"
-                control={control}
-                render={({ field }) => (
-                  <FormControl fullWidth margin="normal">
-                    <InputLabel>Status</InputLabel>
-                    <Select {...field} label="Status">
-                      <MenuItem value="draft">Draft</MenuItem>
-                      <MenuItem value="active">Active</MenuItem>
-                      <MenuItem value="inactive">Inactive</MenuItem>
-                      <MenuItem value="archived">Archived</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
-              />
-
-              <Box sx={{ mt: 2 }}>
+          {/* SEO & Settings Tab (Index updated to 3) */}
+          <TabPanel value={activeTab} index={3}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
                 <Controller
-                  name="featured"
+                  name="status"
                   control={control}
                   render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Featured Product"
-                    />
+                    <FormControl fullWidth margin="normal">
+                      <InputLabel>Status</InputLabel>
+                      <Select {...field} label="Status">
+                        <MenuItem value="draft">Draft</MenuItem>
+                        <MenuItem value="active">Active</MenuItem>
+                        <MenuItem value="inactive">Inactive</MenuItem>
+                        <MenuItem value="archived">Archived</MenuItem>
+                      </Select>
+                    </FormControl>
                   )}
                 />
-              </Box>
 
-              <Box>
-                <Controller
-                  name="trending"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Trending Product"
-                    />
-                  )}
-                />
-              </Box>
+                <Box sx={{ mt: 2 }}>
+                  <Controller
+                    name="featured"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControlLabel
+                        control={<Switch {...field} checked={field.value} />}
+                        label="Featured Product"
+                      />
+                    )}
+                  />
+                </Box>
+
+                <Box>
+                  <Controller
+                    name="trending"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControlLabel
+                        control={<Switch {...field} checked={field.value} />}
+                        label="Trending Product"
+                      />
+                    )}
+                  />
+                </Box>
+              </Grid>
             </Grid>
-          </Grid>
-        </TabPanel>
+          </TabPanel>
 
-        <Divider sx={{ my: 3 }} />
+          <Divider sx={{ my: 3 }} />
 
-        <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
-          <Button
-            type="submit"
-            variant="contained"
-            startIcon={<SaveIcon />}
-            disabled={loading}
-            size="large"
-          >
-            {loading
-              ? "Saving..."
-              : initialData
-              ? "Update Product"
-              : "Create Product"}
-          </Button>
-        </Box>
-      </form>
-    </Paper>
-  );
-};
+          <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+            <Button
+              type="submit"
+              variant="contained"
+              startIcon={<SaveIcon />}
+              disabled={loading}
+              size="large"
+            >
+              {loading
+                ? "Saving..."
+                : initialData
+                ? "Update Product"
+                : "Create Product"}
+            </Button>
+          </Box>
+        </form>
+      </Paper>
+    );
+  }
+);
 
 export default ProductForm;

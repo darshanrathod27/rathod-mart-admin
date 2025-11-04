@@ -66,7 +66,9 @@ const Users = () => {
         role: filterRole,
         status: filterStatus,
       });
+      // This is correct: response.data.users
       setUsers(response.data.users);
+      // This is correct: response.data.pagination.total
       setRowCount(response.data.pagination.total);
     } catch (error) {
       console.error("Failed to fetch users:", error);
@@ -218,7 +220,7 @@ const Users = () => {
       headerName: "Created",
       width: 120,
       type: "date",
-      valueGetter: (value) => value && new Date(value),
+      valueGetter: (params) => params.value && new Date(params.value),
       renderCell: (params) => {
         if (!params.value) {
           return "N/A";

@@ -1,14 +1,14 @@
 // frontend/src/services/productService.js
-import api from "./api"; // Use the central api instance
+import api from "./api"; // <-- IMPORT YOUR CUSTOM API
 
-const API_URL = "/products"; // Base path is now handled by api.js
+const API_URL = "/products"; // <-- Use the relative path
 
 class ProductService {
   // Get all products with enhanced filtering
   async getProducts(params = {}) {
     try {
       const response = await api.get(API_URL, { params });
-      return response.data;
+      return response.data; // <-- This will now work with your interceptor
     } catch (error) {
       console.error("Error fetching products:", error);
       throw error;
@@ -29,8 +29,11 @@ class ProductService {
   // Create new product
   async createProduct(productData) {
     try {
-      // 'Content-Type': 'application/json' is handled by api.js
-      const response = await api.post(API_URL, productData);
+      const response = await api.post(API_URL, productData, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
       return response.data;
     } catch (error) {
       console.error("Error creating product:", error);
@@ -41,8 +44,11 @@ class ProductService {
   // Update product
   async updateProduct(id, productData) {
     try {
-      // 'Content-Type': 'application/json' is handled by api.js
-      const response = await api.put(`${API_URL}/${id}`, productData);
+      const response = await api.put(`${API_URL}/${id}`, productData, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
       return response.data;
     } catch (error) {
       console.error("Error updating product:", error);
@@ -69,7 +75,6 @@ class ProductService {
         formData,
         {
           headers: {
-            // Must override for file uploads
             "Content-Type": "multipart/form-data",
           },
         }
@@ -89,7 +94,6 @@ class ProductService {
         formData,
         {
           headers: {
-            // Must override for file uploads
             "Content-Type": "multipart/form-data",
           },
         }
@@ -115,10 +119,14 @@ class ProductService {
   // Update product image
   async updateProductImage(imageId, updateData) {
     try {
-      // 'Content-Type': 'application/json' is handled by api.js
       const response = await api.put(
         `${API_URL}/images/${imageId}`,
-        updateData
+        updateData,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
       );
       return response.data;
     } catch (error) {

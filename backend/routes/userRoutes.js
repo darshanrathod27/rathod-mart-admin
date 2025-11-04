@@ -1,26 +1,25 @@
 import express from "express";
+import {
+  getUsers,
+  getUser,
+  createUser,
+  updateUser,
+  deleteUser,
+  getUserStats,
+} from "../controllers/userController.js";
+// Add any validation middleware you have
+// import { validateUser } from "../middleware/validationMiddleware.js";
+
 const router = express.Router();
 
-// Mock users
-const mockUsers = [
-  { _id: "1", name: "Admin User", email: "admin@example.com", role: "admin" },
-  { _id: "2", name: "John Doe", email: "john@example.com", role: "user" },
-];
+router.route("/").get(getUsers).post(createUser); // Add validateUser here if you have it
 
-// GET /api/users
-router.get("/", (req, res) => {
-  try {
-    res.status(200).json({
-      success: true,
-      data: mockUsers,
-      total: mockUsers.length,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-});
+router.route("/stats").get(getUserStats);
+
+router
+  .route("/:id")
+  .get(getUser)
+  .put(updateUser) // Add validateUser here if you have it
+  .delete(deleteUser);
 
 export default router;

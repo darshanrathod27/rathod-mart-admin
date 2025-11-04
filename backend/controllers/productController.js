@@ -3,7 +3,7 @@ import Category from "../models/Category.js";
 import ImageService from "../services/imageService.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
-// Create product with images
+// Create product with images (NO variants or specifications)
 export const createProduct = asyncHandler(async (req, res) => {
   const {
     name,
@@ -15,8 +15,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     discountPrice,
     tags,
     features,
-    specifications,
-    variants,
+    // 'specifications' removed
     status,
   } = req.body;
 
@@ -60,52 +59,7 @@ export const createProduct = asyncHandler(async (req, res) => {
     }));
   }
 
-  // Process variants with images
-  let processedVariants = [];
-  if (variants && Array.isArray(variants)) {
-    for (let i = 0; i < variants.length; i++) {
-      const variant = variants[i];
-      let variantImages = [];
-
-      // Handle variant images
-      const variantImageField = `variant_${i}_images`;
-      if (req.files && req.files[variantImageField]) {
-        const variantImageFiles = Array.isArray(req.files[variantImageField])
-          ? req.files[variantImageField]
-          : [req.files[variantImageField]];
-
-        const uploadedVariantImages = await ImageService.uploadMultipleImages(
-          variantImageFiles,
-          "products/variants"
-        );
-
-        variantImages = uploadedVariantImages.map((img, index) => ({
-          ...img,
-          isPrimary: index === 0,
-          sortOrder: index,
-          alt: `${name} - ${variant.color.name} ${variant.size.name} - Image ${
-            index + 1
-          }`,
-        }));
-      }
-
-      processedVariants.push({
-        ...variant,
-        images: variantImages,
-        sku:
-          variant.sku ||
-          `${name.replace(/\s+/g, "-")}-${variant.color.name}-${
-            variant.size.name
-          }`.toUpperCase(),
-      });
-    }
-  }
-
-  // Calculate total stock
-  const totalStock = processedVariants.reduce(
-    (total, variant) => total + (variant.stock || 0),
-    0
-  );
+  // --- All Variant Logic Removed ---
 
   // Generate slug
   const slug = name
@@ -120,16 +74,15 @@ export const createProduct = asyncHandler(async (req, res) => {
     category,
     brand,
     images: productImages,
-    variants: processedVariants,
+    // 'variants' field removed
     basePrice,
     discountPrice,
-    tags: tags ? tags.split(",").map((tag) => tag.trim()) : [],
-    features: features
-      ? features.split(",").map((feature) => feature.trim())
-      : [],
-    specifications: specifications ? JSON.parse(specifications) : [],
+    // FIX: Accept tags and features as arrays, not strings
+    tags: tags || [],
+    features: features || [],
+    // 'specifications' removed
     status: status || "draft",
-    totalStock,
+    totalStock: 0, // Set default stock to 0
     slug: `${slug}-${Date.now()}`,
   });
 
@@ -143,7 +96,7 @@ export const createProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Get all products with enhanced filtering
+// Get all products (This function remains unchanged)
 export const getProducts = asyncHandler(async (req, res) => {
   const {
     page = 1,
@@ -201,7 +154,6 @@ export const getProducts = asyncHandler(async (req, res) => {
     success: true,
     data: {
       products: products,
-
       pagination: {
         current: Number(page),
         pages: Math.ceil(total / Number(limit)),
@@ -214,7 +166,7 @@ export const getProducts = asyncHandler(async (req, res) => {
   });
 });
 
-// Get single product
+// Get single product (This function remains unchanged)
 export const getProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id)
     .populate("category", "name slug description")
@@ -236,7 +188,7 @@ export const getProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Update product
+// Update product (Simplified)
 export const updateProduct = asyncHandler(async (req, res) => {
   const productId = req.params.id;
   const existingProduct = await Product.findById(productId);
@@ -262,36 +214,52 @@ export const updateProduct = asyncHandler(async (req, res) => {
 
     const newImages = uploadedImages.map((img, index) => ({
       ...img,
-      isPrimary: existingProduct.images.length === 0 && index === 0,
-      sortOrder: existingProduct.images.length + index,
+      isPrimary: (existingProduct.images || []).length === 0 && index === 0,
+      sortOrder: (existingProduct.images || []).length + index,
       alt: `${updateData.name || existingProduct.name} - Image ${
-        existingProduct.images.length + index + 1
+        (existingProduct.images || []).length + index + 1
       }`,
     }));
 
-    updateData.images = [...existingProduct.images, ...newImages];
+    updateData.images = [...(existingProduct.images || []), ...newImages];
   }
 
   // Handle image deletions
   if (req.body.deleteImages) {
-    const imagesToDelete = JSON.parse(req.body.deleteImages);
-    for (const publicId of imagesToDelete) {
-      await ImageService.deleteImage(publicId);
-      updateData.images = updateData.images.filter(
-        (img) => img.publicId !== publicId
-      );
+    try {
+      const imagesToDelete = JSON.parse(req.body.deleteImages);
+      if (Array.isArray(imagesToDelete)) {
+        let currentImages = updateData.images || existingProduct.images || [];
+        for (const publicId of imagesToDelete) {
+          await ImageService.deleteImage(publicId);
+          currentImages = currentImages.filter(
+            (img) => img.publicId !== publicId
+          );
+        }
+        updateData.images = currentImages;
+      }
+    } catch (e) {
+      console.error("Error parsing deleteImages: ", e);
     }
   }
 
-  // Process tags and features
-  if (updateData.tags && typeof updateData.tags === "string") {
+  // FIX: tags and features are now arrays, remove string split logic
+  // (Assuming frontend sends arrays for tags and features)
+  if (updateData.tags && !Array.isArray(updateData.tags)) {
+    // Fallback if old string data is sent
     updateData.tags = updateData.tags.split(",").map((tag) => tag.trim());
   }
 
-  if (updateData.features && typeof updateData.features === "string") {
+  if (updateData.features && !Array.isArray(updateData.features)) {
+    // Fallback if old string data is sent
     updateData.features = updateData.features
       .split(",")
       .map((feature) => feature.trim());
+  }
+
+  // REMOVE specifications
+  if (updateData.specifications) {
+    delete updateData.specifications;
   }
 
   const updatedProduct = await Product.findByIdAndUpdate(
@@ -307,7 +275,7 @@ export const updateProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Delete product
+// Delete product (Simplified)
 export const deleteProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id);
 
@@ -319,14 +287,14 @@ export const deleteProduct = asyncHandler(async (req, res) => {
   }
 
   // Delete all product images
-  const allImages = [...product.images];
-  product.variants.forEach((variant) => {
-    allImages.push(...variant.images);
-  });
+  const allImages = [...(product.images || [])];
+  // --- Variant Image Logic Removed ---
 
   if (allImages.length > 0) {
-    const publicIds = allImages.map((img) => img.publicId);
-    await ImageService.deleteMultipleImages(publicIds);
+    const publicIds = allImages.map((img) => img.publicId).filter(Boolean);
+    if (publicIds.length > 0) {
+      await ImageService.deleteMultipleImages(publicIds);
+    }
   }
 
   await Product.findByIdAndDelete(req.params.id);
@@ -337,7 +305,7 @@ export const deleteProduct = asyncHandler(async (req, res) => {
   });
 });
 
-// Reorder product images
+// Reorder product images (This function remains unchanged)
 export const reorderProductImages = asyncHandler(async (req, res) => {
   const { imageOrder } = req.body;
 
@@ -374,7 +342,7 @@ export const reorderProductImages = asyncHandler(async (req, res) => {
   });
 });
 
-// Set primary image
+// Set primary image (This function remains unchanged)
 export const setPrimaryImage = asyncHandler(async (req, res) => {
   const { publicId } = req.body;
 

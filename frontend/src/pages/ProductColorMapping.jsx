@@ -63,8 +63,9 @@ const ProductColorMapping = () => {
         status: filterStatus,
         product: filterProduct,
       });
-      // This code is correct and expects { data: { mappings: [], pagination: {} } }
+      // This is correct: response.data.mappings
       setMappings(response.data.mappings);
+      // This is correct: response.data.pagination.total
       setRowCount(response.data.pagination.total);
     } catch (error) {
       setError("Failed to load mappings. Please try again.");
@@ -77,7 +78,7 @@ const ProductColorMapping = () => {
   useEffect(() => {
     const fetchProductsForFilter = async () => {
       try {
-        // This code is correct and expects { data: { products: [] } } after Fix 1
+        // This is correct: response.data.products
         const res = await productService.getProducts({ limit: 500 });
         setProducts(res.data.products);
       } catch (err) {

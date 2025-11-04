@@ -39,6 +39,7 @@ const InventoryMaster = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
+        // This is correct: response.data.products
         const response = await productService.getProducts({ limit: 500 });
         setProducts(
           response.data.products.filter((p) => p.status === "Active")
@@ -96,7 +97,9 @@ const InventoryMaster = () => {
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
       });
+      // This is correct: response.data.ledgers
       setLedgerEntries(response.data.ledgers);
+      // This is correct: response.data.pagination.total
       setRowCount(response.data.pagination.total);
     } catch (error) {
       toast.error("Failed to load inventory ledger");
@@ -163,6 +166,7 @@ const InventoryMaster = () => {
       field: "variant",
       headerName: "Variant",
       width: 200,
+      valueGetter: (params) => params.row.variant,
       renderCell: (params) => {
         if (!params.value)
           return <Chip label="Base Product" size="small" color="primary" />;
@@ -247,27 +251,6 @@ const InventoryMaster = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
-      {/* <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="h4"
-            sx={{ fontWeight: 600, color: "#2E7D32", mb: 1 }}
-          >
-            <Inventory2 sx={{ mr: 1, verticalAlign: "middle", fontSize: 32 }} />
-            Inventory Master
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage stock levels, track inventory movements, and monitor product
-            variants
-          </Typography>
-        </Box>
-      </motion.div> */}
-
       {/* Product Selection */}
       <Card sx={{ mb: 3, overflow: "visible" }}>
         <Box sx={{ p: 3 }}>
@@ -283,7 +266,7 @@ const InventoryMaster = () => {
               </MenuItem>
               {products.map((product) => (
                 <MenuItem key={product._id} value={product._id}>
-                  {product.name} - ₹{product.price}
+                  {product.name} - ₹{product.basePrice}
                 </MenuItem>
               ))}
             </Select>

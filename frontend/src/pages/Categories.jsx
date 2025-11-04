@@ -62,7 +62,9 @@ const Categories = () => {
         search: debouncedSearchTerm,
         status: filterStatus,
       });
+      // This is correct: response.data.categories
       setCategories(response.data.categories);
+      // This is correct: response.data.pagination.total
       setRowCount(response.data.pagination.total);
     } catch (error) {
       console.error("Failed to fetch categories:", error);
@@ -184,7 +186,7 @@ const Categories = () => {
       headerName: "Created",
       width: 120,
       type: "date",
-      valueGetter: (value) => value && new Date(value),
+      valueGetter: (params) => params.value && new Date(params.value),
       renderCell: (params) => {
         if (!params.value) {
           return "N/A";
