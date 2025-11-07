@@ -1,3 +1,4 @@
+// backend/routes/variantMasterRoutes.js
 import express from "express";
 import {
   getVariants,
@@ -11,9 +12,7 @@ import {
 const router = express.Router();
 
 router.route("/").get(getVariants).post(createVariant);
-
 router.route("/product/:productId").get(getVariantsByProduct);
-
 router.route("/:id").get(getVariant).put(updateVariant).delete(deleteVariant);
 
 export default router;

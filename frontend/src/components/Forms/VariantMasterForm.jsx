@@ -1,3 +1,4 @@
+// src/components/Forms/VariantMasterForm.jsx
 import React, { useState, useEffect } from "react";
 import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
@@ -32,12 +33,15 @@ import {
   AspectRatio,
   AttachMoney,
 } from "@mui/icons-material";
-import { productService } from "../../services/productService";
-import { productSizeMappingService } from "../../services/productSizeMappingService";
-import { productColorMappingService } from "../../services/productColorMappingService";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 
+// services
+import { productService } from "../../services/productService";
+import { productSizeMappingService } from "../../services/productSizeMappingService";
+import { productColorMappingService } from "../../services/productColorMappingService";
+
+/* ----------------- validation ----------------- */
 const variantSchema = yup.object({
   product: yup.string().required("Product selection is required"),
   variants: yup
@@ -57,6 +61,23 @@ const variantSchema = yup.object({
     .min(1, "At least one variant is required"),
 });
 
+/* -------- helpers: safe extraction from any API shape -------- */
+const asArray = (val) => (Array.isArray(val) ? val : []);
+const extractProducts = (res) => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res?.data?.products)) return res.data.products;
+  if (Array.isArray(res?.products)) return res.products;
+  return [];
+};
+const extractMappings = (res) => {
+  if (Array.isArray(res?.mappings)) return res.mappings;
+  if (Array.isArray(res?.data?.mappings)) return res.data.mappings;
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res)) return res;
+  return [];
+};
+
 const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
   const [products, setProducts] = useState([]);
   const [sizes, setSizes] = useState([]);
@@ -72,14 +93,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
     resolver: yupResolver(variantSchema),
     defaultValues: initialData || {
       product: "",
-      variants: [
-        {
-          size: "",
-          color: "",
-          price: "",
-          status: "Active",
-        },
-      ],
+      variants: [{ size: "", color: "", price: "", status: "Active" }],
     },
   });
 
@@ -87,20 +101,26 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
     control,
     name: "variants",
   });
-
   const selectedProduct = watch("product");
 
+  /* ----------------- load products (Active only) ----------------- */
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const response = await productService.getProducts({ limit: 100 });
-        setProducts(
-          response.data.products.filter((prod) => prod.status === "Active")
+        const res = await productService.getProducts({
+          limit: 1000,
+          status: "active",
+        });
+        let list = extractProducts(res);
+        list = asArray(list).filter(
+          (p) => String(p.status || p.state || "").toLowerCase() === "active"
         );
+        setProducts(list);
       } catch (error) {
         console.error("Error fetching products:", error);
         toast.error("Failed to load products");
+        setProducts([]);
       } finally {
         setLoading(false);
       }
@@ -108,59 +128,54 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
     fetchProducts();
   }, []);
 
+  /* ---------- when product changes, load sizes & colors ----------- */
   useEffect(() => {
-    if (selectedProduct) {
-      const fetchSizesAndColors = async () => {
-        try {
-          setLoading(true);
-          const [sizesRes, colorsRes] = await Promise.all([
-            // FIXED: Corrected function name from getMappings to getSizeMappings
-            productSizeMappingService.getSizeMappings({
-              product: selectedProduct,
-              limit: 100,
-              status: "Active",
-            }),
-            // FIXED: Corrected function name from getMappings to getColorMappings
-            productColorMappingService.getColorMappings({
-              product: selectedProduct,
-              limit: 100,
-              status: "Active",
-            }),
-          ]);
-
-          // FIXED: Correctly access nested data object from API response
-          const fetchedSizes = sizesRes.data?.mappings || [];
-          const fetchedColors = colorsRes.data?.mappings || [];
-
-          setSizes(fetchedSizes);
-          setColors(fetchedColors);
-
-          if (fetchedSizes.length === 0) {
-            toast.error(
-              "No active sizes found. Please add sizes for this product first."
-            );
-          }
-          if (fetchedColors.length === 0) {
-            toast.error(
-              "No active colors found. Please add colors for this product first."
-            );
-          }
-        } catch (error) {
-          console.error("Error fetching sizes/colors:", error);
-          toast.error("Failed to load sizes and colors for this product.");
-          setSizes([]);
-          setColors([]);
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchSizesAndColors();
-    } else {
+    if (!selectedProduct) {
       setSizes([]);
       setColors([]);
+      return;
     }
+    const fetchSizesAndColors = async () => {
+      try {
+        setLoading(true);
+        const [sizesRes, colorsRes] = await Promise.all([
+          productSizeMappingService.getSizeMappings({
+            product: selectedProduct,
+            limit: 500,
+            status: "Active",
+          }),
+          productColorMappingService.getColorMappings({
+            product: selectedProduct,
+            limit: 500,
+            status: "Active",
+          }),
+        ]);
+
+        const fetchedSizes = extractMappings(sizesRes);
+        const fetchedColors = extractMappings(colorsRes);
+
+        setSizes(asArray(fetchedSizes));
+        setColors(asArray(fetchedColors));
+
+        if (fetchedSizes.length === 0) {
+          toast.error("No active sizes found. Please add sizes first.");
+        }
+        if (fetchedColors.length === 0) {
+          toast.error("No active colors found. Please add colors first.");
+        }
+      } catch (error) {
+        console.error("Error fetching sizes/colors:", error);
+        toast.error("Failed to load sizes and colors for this product.");
+        setSizes([]);
+        setColors([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSizesAndColors();
   }, [selectedProduct]);
 
+  /* ----------------- submit handlers ----------------- */
   const handleFormSubmit = (data) => {
     if (!selectedProduct) {
       toast.error("Please select a product");
@@ -184,14 +199,10 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
       toast.error("Cannot add variant without available sizes and colors.");
       return;
     }
-    append({
-      size: "",
-      color: "",
-      price: "",
-      status: "Active",
-    });
+    append({ size: "", color: "", price: "", status: "Active" });
   };
 
+  /* ----------------- UI ----------------- */
   return (
     <Box
       component={motion.div}
@@ -206,7 +217,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
         sx={{ maxHeight: "68vh", overflowY: "auto", pr: 1 }}
       >
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {/* Product Selection - Full Width */}
+          {/* Product Selection */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -275,7 +286,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
             </FormControl>
           </motion.div>
 
-          {/* Warning Message for Missing Sizes/Colors */}
+          {/* Warning when sizes/colors missing */}
           {selectedProduct && (sizes.length === 0 || colors.length === 0) && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -296,7 +307,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
             </motion.div>
           )}
 
-          {/* Variants Section Header */}
+          {/* Header */}
           <Divider sx={{ my: 1 }} />
           <Box
             sx={{
@@ -348,7 +359,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
               </Alert>
             )}
 
-          {/* Variants List */}
+          {/* Variants list */}
           <AnimatePresence>
             {fields.map((field, index) => (
               <motion.div
@@ -369,7 +380,6 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
                     position: "relative",
                   }}
                 >
-                  {/* Variant Header */}
                   <Box
                     sx={{
                       display: "flex",
@@ -403,11 +413,10 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
                     )}
                   </Box>
 
-                  {/* Variant Fields */}
                   <Box
                     sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}
                   >
-                    {/* Size Selection - Full Width */}
+                    {/* Size */}
                     <FormControl
                       fullWidth
                       error={!!errors.variants?.[index]?.size}
@@ -475,7 +484,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
                       )}
                     </FormControl>
 
-                    {/* Color Selection - Full Width */}
+                    {/* Color */}
                     <FormControl
                       fullWidth
                       error={!!errors.variants?.[index]?.color}
@@ -522,9 +531,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
                                       border: "2px solid #ccc",
                                       boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                                     }}
-                                  >
-                                    {" "}
-                                  </Avatar>
+                                  />
                                   <Typography sx={{ fontWeight: 600 }}>
                                     {color.colorName}
                                   </Typography>
@@ -551,7 +558,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
                       )}
                     </FormControl>
 
-                    {/* Price - Full Width */}
+                    {/* Price */}
                     <Controller
                       name={`variants.${index}.price`}
                       control={control}
@@ -586,7 +593,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
                       )}
                     />
 
-                    {/* Status - Full Width */}
+                    {/* Status */}
                     <FormControl
                       fullWidth
                       error={!!errors.variants?.[index]?.status}
@@ -634,7 +641,7 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
             ))}
           </AnimatePresence>
 
-          {/* Action Buttons */}
+          {/* Actions */}
           <Divider sx={{ my: 2 }} />
           <motion.div
             initial={{ opacity: 0, y: 20 }}

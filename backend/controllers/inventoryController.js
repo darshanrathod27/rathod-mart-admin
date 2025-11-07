@@ -1,164 +1,171 @@
 // backend/controllers/inventoryController.js
-
 import mongoose from "mongoose";
 import InventoryLedger from "../models/InventoryLedger.js";
 import Product from "../models/Product.js";
 import VariantMaster from "../models/VariantMaster.js";
-import asyncHandler from "../middleware/asyncHandler.js";
+import asyncHandler from "../middleware/asyncHandler.js"; // keep your project's async wrapper
 
-// Helper function to get current stock from ledger
+/**
+ * Helper: get current stock.
+ * If variantId is provided -> variant-level latest balanceStock (IN - OUT tracked in ledger)
+ * If variantId is null -> base product stock ledger (variant null)
+ */
 const getCurrentStock = async (productId, variantId = null) => {
-  const query = { product: productId };
-  if (variantId) {
-    query.variant = variantId;
-  } else {
-    query.variant = { $in: [null, undefined] };
-  }
+  const q = { product: productId };
+  if (variantId) q.variant = variantId;
+  else q.variant = { $in: [null, undefined] };
 
-  const latestEntry = await InventoryLedger.findOne(query)
+  // Use latest ledger entry's balanceStock if present (your model has balanceStock)
+  const latest = await InventoryLedger.findOne(q)
     .sort({ createdAt: -1 })
-    .select("balanceStock");
-
-  return latestEntry?.balanceStock || 0;
+    .select("balanceStock")
+    .lean();
+  return latest?.balanceStock ?? 0;
 };
 
-// New helper to update the total stock on the parent Product model
+/**
+ * Helper: recalc product total stock = sum of all variants currentStock + base product stock (if no variants)
+ */
 const updateProductTotalStock = async (productId) => {
   const variants = await VariantMaster.find({
     product: productId,
     isDeleted: false,
-  });
+  })
+    .select("_id")
+    .lean();
 
-  let totalStock = 0;
+  let total = 0;
 
-  // Sum stock of all variants
-  for (const variant of variants) {
-    const variantStock = await getCurrentStock(productId, variant._id);
-    totalStock += variantStock;
+  if (variants.length > 0) {
+    for (const v of variants) {
+      // eslint-disable-next-line no-await-in-loop
+      const vs = await getCurrentStock(productId, v._id);
+      total += Number(vs || 0);
+    }
+  } else {
+    // no variants -> take base product stock ledger (variant null)
+    total = Number((await getCurrentStock(productId, null)) || 0);
   }
 
-  // Add stock of the base product (if it's managed separately without variants)
-  if (variants.length === 0) {
-    const baseProductStock = await getCurrentStock(productId, null);
-    totalStock += baseProductStock;
-  }
-
-  // Update the stock field on the Product document
-  await Product.findByIdAndUpdate(productId, { stock: totalStock });
+  await Product.findByIdAndUpdate(productId, { stock: total }, { new: true });
+  return total;
 };
 
-// @desc Add stock to inventory (Purchase)
-// @route POST /api/inventory/add-stock
-// @access Private
+/* ---------------- Add stock (body-based payload: { product, variant, quantity, remarks }) ---------------- */
 export const addStock = asyncHandler(async (req, res) => {
   const { product, variant, quantity, remarks } = req.body;
 
-  if (!product || !quantity || quantity <= 0) {
-    res.status(400);
-    throw new Error("Product and a valid quantity are required");
+  if (!product || !quantity || Number(quantity) <= 0) {
+    const e = new Error("Product and valid quantity required");
+    e.statusCode = 400;
+    throw e;
   }
 
-  const productDoc = await Product.findById(product);
-  if (!productDoc) {
-    res.status(404);
-    throw new Error("Product not found");
+  const prod = await Product.findById(product);
+  if (!prod) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
   }
 
   if (variant) {
-    const variantDoc = await VariantMaster.findById(variant);
-    if (!variantDoc || variantDoc.product.toString() !== product) {
-      res.status(400);
-      throw new Error("Variant not found or does not belong to this product");
+    const varDoc = await VariantMaster.findById(variant);
+    if (!varDoc || varDoc.product.toString() !== product.toString()) {
+      const e = new Error("Variant mismatch");
+      e.statusCode = 400;
+      throw e;
     }
   }
 
-  const currentStock = await getCurrentStock(product, variant);
-  const newStock = currentStock + Number(quantity);
+  // compute new balanceStock (use latest balanceStock if stored; fallback to arithmetic)
+  const current = await getCurrentStock(product, variant || null);
+  const newStock = Number(current) + Number(quantity);
 
-  const ledgerEntry = await InventoryLedger.create({
+  const ledger = await InventoryLedger.create({
     product,
     variant: variant || null,
     referenceType: "Purchase",
+    referenceId: null,
     quantity: Number(quantity),
     type: "IN",
     balanceStock: newStock,
-    remarks: remarks || "Stock added from inventory master",
-    createdBy: req.user?._id,
+    remarks: remarks || "Stock added",
+    createdBy: req.user?._id || null,
   });
 
   await updateProductTotalStock(product);
 
-  res.status(201).json({
-    success: true,
-    message: "Stock added successfully",
-    data: ledgerEntry,
-  });
+  res.status(201).json({ success: true, message: "Stock added", data: ledger });
 });
 
-// @desc Reduce stock from inventory (Sale)
-// @route POST /api/inventory/reduce-stock
-// @access Private
+/* ---------------- Reduce stock (body-based payload: { product, variant, quantity, remarks }) ---------------- */
 export const reduceStock = asyncHandler(async (req, res) => {
   const { product, variant, quantity, remarks } = req.body;
 
-  if (!product || !quantity || quantity <= 0) {
-    res.status(400);
-    throw new Error("Product and a valid quantity are required");
+  if (!product || !quantity || Number(quantity) <= 0) {
+    const e = new Error("Product and valid quantity required");
+    e.statusCode = 400;
+    throw e;
   }
 
-  const productDoc = await Product.findById(product);
-  if (!productDoc) {
-    res.status(404);
-    throw new Error("Product not found");
+  const prod = await Product.findById(product);
+  if (!prod) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
   }
 
   if (variant) {
-    const variantDoc = await VariantMaster.findById(variant);
-    if (!variantDoc || variantDoc.product.toString() !== product) {
-      res.status(400);
-      throw new Error("Variant not found or does not belong to this product");
+    const varDoc = await VariantMaster.findById(variant);
+    if (!varDoc || varDoc.product.toString() !== product.toString()) {
+      const e = new Error("Variant mismatch");
+      e.statusCode = 400;
+      throw e;
     }
   }
 
-  const currentStock = await getCurrentStock(product, variant);
-
-  if (currentStock < quantity) {
-    res.status(400);
-    throw new Error(`Insufficient stock. Available: ${currentStock}`);
+  const current = await getCurrentStock(product, variant || null);
+  if (Number(current) < Number(quantity)) {
+    const e = new Error(`Insufficient stock. Available: ${current}`);
+    e.statusCode = 400;
+    throw e;
   }
 
-  const newStock = currentStock - Number(quantity);
+  const newStock = Number(current) - Number(quantity);
 
-  const ledgerEntry = await InventoryLedger.create({
+  const ledger = await InventoryLedger.create({
     product,
     variant: variant || null,
     referenceType: "Sale",
+    referenceId: null,
     quantity: Number(quantity),
     type: "OUT",
     balanceStock: newStock,
-    remarks: remarks || "Stock reduced - Sale",
-    createdBy: req.user?._id,
+    remarks: remarks || "Stock reduced",
+    createdBy: req.user?._id || null,
   });
 
   await updateProductTotalStock(product);
 
-  res.status(201).json({
-    success: true,
-    message: "Stock reduced successfully",
-    data: ledgerEntry,
-  });
+  res
+    .status(201)
+    .json({ success: true, message: "Stock reduced", data: ledger });
 });
 
-// @desc Get inventory ledger with filters
+/* ---------------- Inventory ledger (with filters) ----------------
+   Query shape: ?page=1&limit=50&filters[product]=...&filters[variant]=...&filters[type]=IN
+*/
 export const getInventoryLedger = asyncHandler(async (req, res) => {
-  // This function remains unchanged...
-  const { page = 1, limit = 50, ...filters } = req.query;
+  const { page = 1, limit = 50 } = req.query;
+  const filters = req.query.filters || {};
   const query = {};
+
   if (filters.product) query.product = filters.product;
   if (filters.variant) query.variant = filters.variant;
   if (filters.type) query.type = filters.type;
 
   const skip = (Number(page) - 1) * Number(limit);
+
   const [ledgers, total] = await Promise.all([
     InventoryLedger.find(query)
       .populate("product", "name")
@@ -168,9 +175,11 @@ export const getInventoryLedger = asyncHandler(async (req, res) => {
       })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(Number(limit)),
+      .limit(Number(limit))
+      .lean(),
     InventoryLedger.countDocuments(query),
   ]);
+
   res.json({
     success: true,
     data: {
@@ -185,9 +194,13 @@ export const getInventoryLedger = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc Get product variants with current stock
+/* ---------------- Get product variants with currentStock attached ----------------
+   Route expectation: either GET /api/inventory/:productId/variants or similar
+   (this handler expects req.params.productId)
+*/
 export const getProductVariants = asyncHandler(async (req, res) => {
   const { productId } = req.params;
+
   const variants = await VariantMaster.find({
     product: productId,
     isDeleted: false,
@@ -195,23 +208,27 @@ export const getProductVariants = asyncHandler(async (req, res) => {
   })
     .populate("size", "sizeName value")
     .populate("color", "colorName value")
-    .sort({ createdAt: -1 });
-  const variantsWithStock = await Promise.all(
-    variants.map(async (variant) => ({
-      ...variant.toObject(),
-      currentStock: await getCurrentStock(productId, variant._id),
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const withStock = await Promise.all(
+    variants.map(async (v) => ({
+      ...v,
+      currentStock: await getCurrentStock(productId, v._id),
     }))
   );
-  res.json({ success: true, data: variantsWithStock });
+
+  res.json({ success: true, data: withStock });
 });
 
-// @desc Get stock summary
+/* ---------------- Stock summary (purchases/sales/current) ----------------
+   GET /api/inventory/:productId/stock-summary
+*/
 export const getStockSummary = asyncHandler(async (req, res) => {
   const { productId } = req.params;
-
   const objectIdProductId = new mongoose.Types.ObjectId(productId);
 
-  const [totalIn, totalOut] = await Promise.all([
+  const [totalInAgg, totalOutAgg, product] = await Promise.all([
     InventoryLedger.aggregate([
       { $match: { product: objectIdProductId, type: "IN" } },
       { $group: { _id: null, total: { $sum: "$quantity" } } },
@@ -220,20 +237,15 @@ export const getStockSummary = asyncHandler(async (req, res) => {
       { $match: { product: objectIdProductId, type: "OUT" } },
       { $group: { _id: null, total: { $sum: "$quantity" } } },
     ]),
+    Product.findById(productId).select("stock").lean(),
   ]);
-
-  const product = await Product.findById(productId).select("stock");
 
   res.json({
     success: true,
     data: {
-      totalPurchase: totalIn[0]?.total || 0,
-      totalSale: totalOut[0]?.total || 0,
+      totalPurchase: totalInAgg[0]?.total || 0,
+      totalSale: totalOutAgg[0]?.total || 0,
       currentStock: product?.stock || 0,
     },
   });
-});
-
-export const getInventoryStats = asyncHandler(async (req, res) => {
-  // This function remains unchanged...
 });

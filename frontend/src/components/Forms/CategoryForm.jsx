@@ -1,170 +1,181 @@
+// src/components/Forms/CategoryForm.jsx
 import React from "react";
 import { useForm, Controller } from "react-hook-form";
-import { yupResolver } from "@hookform/resolvers/yup";
-import * as yup from "yup";
 import {
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Box,
   TextField,
   Button,
-  MenuItem,
+  Typography,
+  IconButton,
   FormControl,
   InputLabel,
   Select,
-  FormHelperText,
-  Typography,
-  Paper,
+  MenuItem,
 } from "@mui/material";
-import { Save, Cancel, Category as CategoryIcon } from "@mui/icons-material";
-import { motion } from "framer-motion";
+import CloseIcon from "@mui/icons-material/Close";
+import SaveIcon from "@mui/icons-material/Save";
+import CategoryIcon from "@mui/icons-material/Category";
+import {
+  StyledFormDialog,
+  formHeaderStyles,
+  fieldContainerStyles,
+  textFieldStyles,
+  formActionsStyles,
+  cancelButtonStyles,
+  submitButtonStyles,
+} from "../../theme/FormStyles";
 
-const categorySchema = yup.object({
-  name: yup
-    .string()
-    .required("Category Name is required")
-    .min(2, "Name must be at least 2 characters"),
-  description: yup
-    .string()
-    .required("Description is required")
-    .min(5, "Description must be at least 5 characters"),
-  status: yup.string().required("Status is required"),
-});
+export default function CategoryForm({
+  open = true,
+  initialData,
+  onSubmit,
+  onCancel,
+  onClose,
+  embedded = false,
+}) {
+  const handleClose = onCancel || onClose;
 
-const CategoryForm = ({ initialData, onSubmit, onCancel }) => {
-  const {
-    control,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: yupResolver(categorySchema),
-    defaultValues: initialData || {
-      name: "",
-      description: "",
-      status: "Active",
+  const { control, handleSubmit } = useForm({
+    defaultValues: {
+      name: initialData?.name || "",
+      description: initialData?.description || "",
+      status: initialData?.status || "Active",
     },
   });
 
-  const formFields = [
-    {
-      name: "name",
-      label: "Category Name",
-      placeholder: "e.g., Electronics, Fashion",
-    },
-    {
-      name: "description",
-      label: "Description",
-      placeholder: "Brief description of the category",
-      multiline: true,
-      rows: 3,
-    },
-  ];
+  const submit = (vals) => onSubmit?.(vals);
 
-  return (
-    <Box
-      component={motion.div}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-    >
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {formFields.map((field, index) => (
-            <motion.div
-              key={field.name}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: index * 0.1 }}
-            >
-              <Controller
-                name={field.name}
-                control={control}
-                render={({ field: controllerField }) => (
-                  <TextField
-                    {...controllerField}
-                    fullWidth
-                    label={field.label}
-                    placeholder={field.placeholder}
-                    error={!!errors[field.name]}
-                    helperText={errors[field.name]?.message}
-                    multiline={field.multiline}
-                    rows={field.rows}
-                    sx={{
-                      "& .MuiOutlinedInput-root": {
-                        "&:hover fieldset": { borderColor: "primary.main" },
-                        "&.Mui-focused fieldset": {
-                          borderColor: "primary.main",
-                          borderWidth: 2,
-                        },
-                      },
-                    }}
-                  />
-                )}
+  const inner = (
+    <Box sx={{ p: 3 }}>
+      <Box component="form" onSubmit={handleSubmit(submit)}>
+        <Box sx={fieldContainerStyles}>
+          <Controller
+            name="name"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Category Name"
+                required
+                fullWidth
+                sx={textFieldStyles}
               />
-            </motion.div>
-          ))}
+            )}
+          />
+        </Box>
 
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-          >
-            <FormControl fullWidth error={!!errors.status}>
-              <InputLabel>Status</InputLabel>
-              <Controller
-                name="status"
-                control={control}
-                render={({ field }) => (
-                  <Select {...field} label="Status">
-                    <MenuItem value="Active">Active</MenuItem>
-                    <MenuItem value="Inactive">Inactive</MenuItem>
-                  </Select>
-                )}
+        <Box sx={fieldContainerStyles}>
+          <Controller
+            name="description"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Description"
+                multiline
+                rows={4}
+                fullWidth
+                sx={textFieldStyles}
               />
-              {errors.status && (
-                <FormHelperText>{errors.status.message}</FormHelperText>
+            )}
+          />
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <FormControl fullWidth size="medium" sx={textFieldStyles}>
+            <InputLabel id="cat-status-label">Status</InputLabel>
+            <Controller
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <Select labelId="cat-status-label" label="Status" {...field}>
+                  <MenuItem value="Active">Active</MenuItem>
+                  <MenuItem value="Inactive">Inactive</MenuItem>
+                </Select>
               )}
-            </FormControl>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                gap: 2,
-                justifyContent: "flex-end",
-                pt: 2,
-              }}
-            >
-              <Button
-                variant="outlined"
-                startIcon={<Cancel />}
-                onClick={onCancel}
-                sx={{ minWidth: 120 }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="contained"
-                startIcon={<Save />}
-                sx={{
-                  minWidth: 120,
-                  background:
-                    "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-                  boxShadow: "0 4px 12px rgba(76, 175, 80, 0.3)",
-                }}
-              >
-                {initialData ? "Update" : "Create"}
-              </Button>
-            </Box>
-          </motion.div>
+            />
+          </FormControl>
         </Box>
       </Box>
     </Box>
   );
-};
 
-export default CategoryForm;
+  const actions = (
+    <DialogActions sx={formActionsStyles}>
+      <Button onClick={handleClose} variant="outlined" sx={cancelButtonStyles}>
+        Cancel
+      </Button>
+      <Button
+        onClick={handleSubmit(submit)}
+        variant="contained"
+        startIcon={<SaveIcon />}
+        sx={submitButtonStyles}
+      >
+        {initialData ? "Update Category" : "Create Category"}
+      </Button>
+    </DialogActions>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {inner}
+        {actions}
+      </>
+    );
+  }
+
+  return (
+    <StyledFormDialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          bgcolor: "#fff",
+          borderRadius: 2,
+          overflow: "hidden",
+          boxShadow: "0 12px 48px rgba(76, 175, 80, 0.25)",
+        },
+      }}
+      BackdropProps={{ sx: { backgroundColor: "rgba(0,0,0,0.55)" } }}
+    >
+      <DialogTitle
+        sx={{
+          ...formHeaderStyles,
+          color: "#ffffff",
+          position: "relative",
+          zIndex: 1,
+          m: 0,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <CategoryIcon sx={{ fontSize: 26, color: "#fff" }} />
+          <Typography
+            variant="h6"
+            sx={{ fontWeight: 700, fontSize: "20px", color: "#fff" }}
+          >
+            {initialData ? "Edit Category" : "Add New Category"}
+          </Typography>
+        </Box>
+        <IconButton
+          onClick={handleClose}
+          sx={{
+            color: "#ffffff",
+            "&:hover": { backgroundColor: "rgba(255,255,255,0.12)" },
+          }}
+          aria-label="close"
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+
+      <DialogContent sx={{ p: 0, bgcolor: "#fff" }}>{inner}</DialogContent>
+      {actions}
+    </StyledFormDialog>
+  );
+}

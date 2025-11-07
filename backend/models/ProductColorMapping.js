@@ -1,3 +1,4 @@
+// backend/models/ProductColorMapping.js
 import mongoose from "mongoose";
 
 const productColorMappingSchema = new mongoose.Schema(
@@ -6,6 +7,7 @@ const productColorMappingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: [true, "Product is required"],
+      index: true,
     },
     colorName: {
       type: String,
@@ -23,14 +25,10 @@ const productColorMappingSchema = new mongoose.Schema(
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
+      index: true,
     },
-    isDeleted: {
-      type: Boolean,
-      default: false,
-    },
-    deletedAt: {
-      type: Date,
-    },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
   },
   {
     timestamps: true,
@@ -39,9 +37,8 @@ const productColorMappingSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for product and color
-productColorMappingSchema.index({ product: 1, colorName: 1 });
-productColorMappingSchema.index({ status: 1 });
+// indexes
+productColorMappingSchema.index({ product: 1, colorName: 1 }, { unique: true });
 productColorMappingSchema.index({ isDeleted: 1 });
 
 const ProductColorMapping = mongoose.model(

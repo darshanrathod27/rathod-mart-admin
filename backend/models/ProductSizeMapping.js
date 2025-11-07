@@ -1,3 +1,4 @@
+// backend/models/ProductSizeMapping.js
 import mongoose from "mongoose";
 
 const productSizeMappingSchema = new mongoose.Schema(
@@ -6,6 +7,7 @@ const productSizeMappingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: [true, "Product is required"],
+      index: true,
     },
     sizeName: {
       type: String,
@@ -23,14 +25,10 @@ const productSizeMappingSchema = new mongoose.Schema(
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
+      index: true,
     },
-    isDeleted: {
-      type: Boolean,
-      default: false,
-    },
-    deletedAt: {
-      type: Date,
-    },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
   },
   {
     timestamps: true,
@@ -39,9 +37,7 @@ const productSizeMappingSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for product and size
-productSizeMappingSchema.index({ product: 1, sizeName: 1 });
-productSizeMappingSchema.index({ status: 1 });
+productSizeMappingSchema.index({ product: 1, sizeName: 1 }, { unique: true });
 productSizeMappingSchema.index({ isDeleted: 1 });
 
 const ProductSizeMapping = mongoose.model(

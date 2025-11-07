@@ -1,160 +1,81 @@
-// frontend/src/services/productService.js
-import api from "./api"; // <-- IMPORT YOUR CUSTOM API
+// src/services/productService.js
+import api from "./api";
 
-const API_URL = "/products"; // <-- Use the relative path
+const API_URL = "/products";
 
 class ProductService {
-  // Get all products with enhanced filtering
+  // server: { success, data, pagination }
   async getProducts(params = {}) {
-    try {
-      const response = await api.get(API_URL, { params });
-      return response.data; // <-- This will now work with your interceptor
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      throw error;
-    }
+    const res = await api.get(API_URL, { params });
+    return res.data; // { success, data, pagination }
   }
 
-  // Get single product with images
   async getProduct(id) {
-    try {
-      const response = await api.get(`${API_URL}/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching product:", error);
-      throw error;
-    }
+    const res = await api.get(`${API_URL}/${id}`);
+    return res.data;
   }
 
-  // Create new product
   async createProduct(productData) {
-    try {
-      const response = await api.post(API_URL, productData, {
-        headers: {
-          "Content-Type": "application/json",
-        },
+    if (productData instanceof FormData) {
+      const res = await api.post(API_URL, productData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
-      return response.data;
-    } catch (error) {
-      console.error("Error creating product:", error);
-      throw error;
+      return res.data;
     }
+    const res = await api.post(API_URL, productData);
+    return res.data;
   }
 
-  // Update product
   async updateProduct(id, productData) {
-    try {
-      const response = await api.put(`${API_URL}/${id}`, productData, {
-        headers: {
-          "Content-Type": "application/json",
-        },
+    if (productData instanceof FormData) {
+      const res = await api.put(`${API_URL}/${id}`, productData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
-      return response.data;
-    } catch (error) {
-      console.error("Error updating product:", error);
-      throw error;
+      return res.data;
     }
+    const res = await api.put(`${API_URL}/${id}`, productData);
+    return res.data;
   }
 
-  // Delete product
   async deleteProduct(id) {
-    try {
-      const response = await api.delete(`${API_URL}/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error("Error deleting product:", error);
-      throw error;
-    }
+    const res = await api.delete(`${API_URL}/${id}`);
+    return res.data;
   }
 
-  // Upload single product image
-  async uploadProductImage(productId, formData) {
-    try {
-      const response = await api.post(
-        `${API_URL}/${productId}/images`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error uploading image:", error);
-      throw error;
-    }
-  }
-
-  // Upload multiple product images
   async uploadMultipleProductImages(productId, formData) {
-    try {
-      const response = await api.post(
-        `${API_URL}/${productId}/images/multiple`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error uploading multiple images:", error);
-      throw error;
-    }
+    const res = await api.put(`${API_URL}/${productId}`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
   }
 
-  // Get product images
   async getProductImages(productId) {
-    try {
-      const response = await api.get(`${API_URL}/${productId}/images`);
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching product images:", error);
-      throw error;
-    }
+    const res = await this.getProduct(productId);
+    return res.data?.images || [];
   }
 
-  // Update product image
-  async updateProductImage(imageId, updateData) {
-    try {
-      const response = await api.put(
-        `${API_URL}/images/${imageId}`,
-        updateData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error updating product image:", error);
-      throw error;
-    }
+  async deleteProductImage(productId, filename) {
+    const res = await api.put(`${API_URL}/${productId}`, {
+      deleteFilenames: [filename],
+    });
+    return res.data;
   }
 
-  // Delete product image
-  async deleteProductImage(imageId) {
-    try {
-      const response = await api.delete(`${API_URL}/images/${imageId}`);
-      return response.data;
-    } catch (error) {
-      console.error("Error deleting product image:", error);
-      throw error;
-    }
+  async setPrimaryImage(productId, filename) {
+    const res = await api.put(`${API_URL}/${productId}/images/primary`, {
+      filename,
+    });
+    return res.data;
   }
 
-  // Get product statistics
-  async getProductStats() {
-    try {
-      const response = await api.get(`${API_URL}/stats`);
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching product stats:", error);
-      throw error;
-    }
+  async recalculateStock(productId) {
+    const res = await api.put(`${API_URL}/${productId}/recalculate-stock`);
+    return res.data;
+  }
+
+  async getProductVariants(productId) {
+    const res = await api.get(`${API_URL}/${productId}/variants`);
+    return res.data;
   }
 }
 

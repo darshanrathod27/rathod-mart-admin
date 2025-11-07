@@ -1,269 +1,372 @@
-import React from "react";
-import { useForm, Controller } from "react-hook-form";
-import { yupResolver } from "@hookform/resolvers/yup";
-import * as yup from "yup";
+// src/components/Forms/UserForm.jsx
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Box,
   TextField,
   Button,
-  MenuItem,
+  Avatar,
+  Typography,
+  IconButton,
+  Stack,
   FormControl,
   InputLabel,
   Select,
-  FormHelperText,
-  InputAdornment,
-  IconButton,
+  MenuItem,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import SaveIcon from "@mui/icons-material/Save";
+import CancelIcon from "@mui/icons-material/CloseOutlined";
+import CameraAltIcon from "@mui/icons-material/CameraAlt";
+import PersonIcon from "@mui/icons-material/Person";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import { useForm, Controller } from "react-hook-form";
+import { useDropzone } from "react-dropzone";
 import {
-  Save,
-  Cancel,
-  Visibility,
-  VisibilityOff,
-  Phone,
-} from "@mui/icons-material";
-import { motion } from "framer-motion";
-import { useState } from "react";
+  StyledFormDialog,
+  formHeaderStyles,
+  fieldContainerStyles,
+  textFieldStyles,
+  formActionsStyles,
+  cancelButtonStyles,
+  submitButtonStyles,
+  sectionHeaderStyles,
+} from "../../theme/FormStyles";
 
-const userSchema = yup.object({
-  name: yup
-    .string()
-    .required("Name is required")
-    .min(2, "Name must be at least 2 characters"),
-  email: yup
-    .string()
-    .required("Email is required")
-    .email("Invalid email format"),
-  // FIXED: Added phone validation
-  phone: yup
-    .string()
-    .required("Phone number is required")
-    .matches(/^[\+]?[1-9][\d]{0,15}$/, "Please enter a valid phone number"),
-  password: yup.string().when("$isEdit", {
-    is: false,
-    then: (schema) =>
-      schema
-        .required("Password is required")
-        .min(6, "Password must be at least 6 characters"),
-    otherwise: (schema) => schema.notRequired(),
-  }),
-  role: yup.string().required("Role is required"),
-  status: yup.string().required("Status is required"),
-});
-
-const UserForm = ({ initialData, onSubmit, onCancel }) => {
-  const [showPassword, setShowPassword] = useState(false);
-
-  const {
-    control,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: yupResolver(userSchema),
-    context: { isEdit: !!initialData },
-    defaultValues: initialData || {
-      name: "",
-      email: "",
-      phone: "", // FIXED: Added default value
+export default function UserForm({
+  open = true,
+  initialData,
+  onSubmit,
+  onClose,
+  embedded = false,
+}) {
+  const isEdit = Boolean(initialData);
+  const { register, control, handleSubmit, reset } = useForm({
+    defaultValues: {
+      name: initialData?.name || "",
+      email: initialData?.email || "",
+      phone: initialData?.phone || "",
+      role: initialData?.role || "customer",
+      status: initialData?.status || "active",
       password: "",
-      role: "Customer", // Changed default to Customer
-      status: "Active",
     },
   });
 
-  const formFields = [
-    {
-      name: "name",
-      label: "Full Name",
-      placeholder: "e.g., John Doe",
-      type: "text",
-    },
-    {
-      name: "email",
-      label: "Email Address",
-      placeholder: "e.g., john@example.com",
-      type: "email",
-    },
-    // FIXED: Added phone field to the form
-    {
-      name: "phone",
-      label: "Phone Number",
-      placeholder: "e.g., 9876543210",
-      type: "tel",
-      icon: <Phone color="primary" />,
-    },
-  ];
-
-  if (!initialData) {
-    formFields.push({
-      name: "password",
-      label: "Password",
-      placeholder: "Enter password (min 6 characters)",
-      type: "password",
+  useEffect(() => {
+    reset({
+      name: initialData?.name || "",
+      email: initialData?.email || "",
+      phone: initialData?.phone || "",
+      role: initialData?.role || "customer",
+      status: initialData?.status || "active",
+      password: "",
     });
-  }
+    if (initialData?.profileImage) setPreview(initialData.profileImage);
+  }, [initialData, reset]);
 
-  return (
-    <Box
-      component={motion.div}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-    >
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {formFields.map((field, index) => (
-            <motion.div
-              key={field.name}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: index * 0.1 }}
-            >
-              <Controller
-                name={field.name}
-                control={control}
-                render={({ field: controllerField }) => (
-                  <TextField
-                    {...controllerField}
-                    fullWidth
-                    type={
-                      field.type === "password" && !showPassword
-                        ? "password"
-                        : "text"
-                    }
-                    label={`${field.label} *`}
-                    placeholder={field.placeholder}
-                    error={!!errors[field.name]}
-                    helperText={errors[field.name]?.message}
-                    InputProps={{
-                      startAdornment: field.icon && (
-                        <InputAdornment position="start">
-                          {field.icon}
-                        </InputAdornment>
-                      ),
-                      endAdornment:
-                        field.type === "password" ? (
-                          <InputAdornment position="end">
-                            <IconButton
-                              onClick={() => setShowPassword(!showPassword)}
-                              edge="end"
-                            >
-                              {showPassword ? (
-                                <VisibilityOff />
-                              ) : (
-                                <Visibility />
-                              )}
-                            </IconButton>
-                          </InputAdornment>
-                        ) : undefined,
-                    }}
-                    sx={{
-                      "& .MuiOutlinedInput-root": {
-                        "&:hover fieldset": { borderColor: "primary.main" },
-                        "&.Mui-focused fieldset": {
-                          borderColor: "primary.main",
-                          borderWidth: 2,
-                        },
-                      },
-                    }}
-                  />
-                )}
-              />
-            </motion.div>
-          ))}
+  const [preview, setPreview] = useState(initialData?.profileImage || null);
+  const [fileBlob, setFileBlob] = useState(null);
 
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: formFields.length * 0.1 }}
-          >
-            <FormControl fullWidth error={!!errors.role}>
-              <InputLabel>Role *</InputLabel>
-              <Controller
-                name="role"
-                control={control}
-                render={({ field }) => (
-                  <Select {...field} label="Role *">
-                    <MenuItem value="Admin">Admin</MenuItem>
-                    <MenuItem value="Customer">Customer</MenuItem>
-                    <MenuItem value="Vendor">Vendor</MenuItem>
-                  </Select>
-                )}
-              />
-              {errors.role && (
-                <FormHelperText>{errors.role.message}</FormHelperText>
-              )}
-            </FormControl>
-          </motion.div>
+  const onDrop = useCallback((acceptedFiles) => {
+    if (!acceptedFiles?.[0]) return;
+    const f = acceptedFiles[0];
+    setPreview(URL.createObjectURL(f));
+    setFileBlob(f);
+  }, []);
 
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: (formFields.length + 1) * 0.1,
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { "image/*": [] },
+    maxFiles: 1,
+  });
+
+  const removeImage = () => {
+    setPreview(null);
+    setFileBlob(null);
+  };
+
+  const internalSubmit = (values) => {
+    onSubmit?.({ ...values, file: fileBlob || null });
+  };
+
+  const inner = (
+    <Box sx={{ p: 3 }}>
+      <Box component="form" onSubmit={handleSubmit(internalSubmit)}>
+        <Box sx={{ ...fieldContainerStyles, mb: "24px" }}>
+          <Typography sx={sectionHeaderStyles}>
+            <CameraAltIcon sx={{ fontSize: 20 }} />
+            Profile Picture
+          </Typography>
+
+          <Box
+            {...getRootProps()}
+            sx={{
+              border: "2px dashed #66BB6A",
+              borderRadius: 2,
+              backgroundColor: "#F1F8F1",
+              p: 2,
+              minHeight: "120px !important",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              "& > *": { minHeight: "unset !important" },
+              "& [data-dropzone], & .dropzone, & .dz": {
+                minHeight: "120px !important",
+              },
             }}
           >
-            <FormControl fullWidth error={!!errors.status}>
-              <InputLabel>Status *</InputLabel>
-              <Controller
-                name="status"
-                control={control}
-                render={({ field }) => (
-                  <Select {...field} label="Status *">
-                    <MenuItem value="Active">Active</MenuItem>
-                    <MenuItem value="Inactive">Inactive</MenuItem>
-                  </Select>
-                )}
-              />
-              {errors.status && (
-                <FormHelperText>{errors.status.message}</FormHelperText>
-              )}
-            </FormControl>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.5,
-              delay: (formFields.length + 2) * 0.1,
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                gap: 2,
-                justifyContent: "flex-end",
-                pt: 2,
-              }}
-            >
-              <Button
-                variant="outlined"
-                startIcon={<Cancel />}
-                onClick={onCancel}
-                sx={{ minWidth: 120 }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="contained"
-                startIcon={<Save />}
+            <input {...getInputProps()} />
+            {preview ? (
+              <Box
                 sx={{
-                  minWidth: 120,
-                  background:
-                    "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-                  boxShadow: "0 4px 12px rgba(76, 175, 80, 0.3)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 2,
                 }}
               >
-                {initialData ? "Update User" : "Create User"}
-              </Button>
-            </Box>
-          </motion.div>
+                <Avatar
+                  src={preview}
+                  variant="rounded"
+                  sx={{
+                    width: 96,
+                    height: 96,
+                    border: "4px solid #4CAF50",
+                    boxShadow: "0 8px 24px rgba(76, 175, 80, 0.20)",
+                  }}
+                />
+                <Stack direction="row" spacing={2}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<CameraAltIcon />}
+                    sx={{ ...cancelButtonStyles, px: 2 }}
+                  >
+                    Change Photo
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteOutlineIcon />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeImage();
+                    }}
+                    sx={{ px: 2, fontWeight: 600, textTransform: "none" }}
+                  >
+                    Remove
+                  </Button>
+                </Stack>
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 1.25,
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: "50%",
+                    background:
+                      "linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <CloudUploadIcon sx={{ fontSize: 34, color: "#ffffff" }} />
+                </Box>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontWeight: 700, color: "#2E7D32", fontSize: 15 }}
+                >
+                  {isDragActive ? "Drop image here" : "Upload Profile Picture"}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ color: "#66BB6A", textAlign: "center", fontSize: 12.5 }}
+                >
+                  Drag & drop an image here, or click to browse
+                  <br />
+                  <span style={{ fontSize: 11 }}>
+                    Supports: JPG, PNG, GIF (Max 5MB)
+                  </span>
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <TextField
+            label="Full Name"
+            placeholder="Enter full name"
+            {...register("name")}
+            fullWidth
+            sx={textFieldStyles}
+          />
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <TextField
+            label="Email Address"
+            type="email"
+            placeholder="user@example.com"
+            {...register("email")}
+            fullWidth
+            sx={textFieldStyles}
+          />
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <TextField
+            label="Phone Number"
+            placeholder="+91 99999 99999"
+            {...register("phone")}
+            fullWidth
+            sx={textFieldStyles}
+          />
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <FormControl fullWidth size="medium" sx={textFieldStyles}>
+            <InputLabel id="role-label">User Role</InputLabel>
+            <Controller
+              name="role"
+              control={control}
+              render={({ field }) => (
+                <Select labelId="role-label" label="User Role" {...field}>
+                  <MenuItem value="admin">Admin</MenuItem>
+                  <MenuItem value="manager">Manager</MenuItem>
+                  <MenuItem value="customer">Customer</MenuItem>
+                </Select>
+              )}
+            />
+          </FormControl>
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <FormControl fullWidth size="medium" sx={textFieldStyles}>
+            <InputLabel id="status-label">Status</InputLabel>
+            <Controller
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <Select labelId="status-label" label="Status" {...field}>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="inactive">Inactive</MenuItem>
+                </Select>
+              )}
+            />
+          </FormControl>
+        </Box>
+
+        <Box sx={fieldContainerStyles}>
+          <TextField
+            label={
+              isEdit ? "Password (Leave blank to keep current)" : "Password"
+            }
+            type="password"
+            placeholder={
+              isEdit ? "Leave blank to keep current" : "Enter password"
+            }
+            {...register("password")}
+            fullWidth
+            sx={textFieldStyles}
+          />
         </Box>
       </Box>
     </Box>
   );
-};
 
-export default UserForm;
+  const actions = (
+    <DialogActions sx={formActionsStyles}>
+      <Button
+        onClick={onClose}
+        variant="outlined"
+        startIcon={<CancelIcon />}
+        sx={cancelButtonStyles}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={handleSubmit(internalSubmit)}
+        variant="contained"
+        startIcon={<SaveIcon />}
+        sx={submitButtonStyles}
+      >
+        {isEdit ? "Update User" : "Create User"}
+      </Button>
+    </DialogActions>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {inner}
+        {actions}
+      </>
+    );
+  }
+
+  return (
+    <StyledFormDialog
+      open={open}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          bgcolor: "#fff",
+          borderRadius: 2,
+          overflow: "hidden",
+          boxShadow: "0 12px 48px rgba(76, 175, 80, 0.25)",
+        },
+      }}
+      BackdropProps={{ sx: { backgroundColor: "rgba(0,0,0,0.55)" } }}
+    >
+      <DialogTitle
+        sx={{
+          ...formHeaderStyles,
+          color: "#ffffff",
+          position: "relative",
+          zIndex: 1,
+          m: 0,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <PersonIcon sx={{ fontSize: 28, color: "#fff" }} />
+          <Typography
+            variant="h6"
+            sx={{ fontWeight: 700, fontSize: "20px", color: "#fff" }}
+          >
+            {isEdit ? "Edit User" : "Add New User"}
+          </Typography>
+        </Box>
+        <IconButton
+          onClick={onClose}
+          sx={{
+            color: "#ffffff",
+            "&:hover": { backgroundColor: "rgba(255,255,255,0.12)" },
+          }}
+          aria-label="close"
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+
+      <DialogContent sx={{ p: 0, bgcolor: "#fff" }}>{inner}</DialogContent>
+      {actions}
+    </StyledFormDialog>
+  );
+}

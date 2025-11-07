@@ -1,9 +1,35 @@
+// controllers/productController.js
+import fs from "fs";
+import path from "path";
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
-import ImageService from "../services/imageService.js";
 import asyncHandler from "../utils/asyncHandler.js";
+import mongoose from "mongoose";
 
-// Create product with images (NO variants or specifications)
+/* Helper: build public URL for a relative path */
+const buildFullUrl = (req, relPath) => {
+  if (!relPath) return null;
+  // relPath expected like: /uploads/products/filename.jpg
+  return `${req.protocol}://${req.get("host")}${relPath}`;
+};
+
+const UPLOAD_FOLDER = "/uploads/products"; // relative url prefix
+const ABS_UPLOAD_DIR = path.join(process.cwd(), "uploads", "products");
+
+/* Remove file helper - accepts filename only */
+const removeFile = async (filename) => {
+  if (!filename) return;
+  try {
+    const filePath = path.join(ABS_UPLOAD_DIR, filename);
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
+  } catch (e) {
+    console.error("Failed deleting file:", e);
+  }
+};
+
+/* Create Product */
 export const createProduct = asyncHandler(async (req, res) => {
   const {
     name,
@@ -15,57 +41,38 @@ export const createProduct = asyncHandler(async (req, res) => {
     discountPrice,
     tags,
     features,
-    // 'specifications' removed
     status,
   } = req.body;
 
-  // Validate category exists
-  const categoryExists = await Category.findById(category);
-  if (!categoryExists) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid category ID",
-    });
+  // validation: category must exist
+  const cat = await Category.findById(category);
+  if (!cat) {
+    const e = new Error("Invalid category");
+    e.statusCode = 400;
+    throw e;
   }
 
-  let productImages = [];
-
-  // Handle main product images
-  if (req.files && req.files.images) {
-    const imageFiles = Array.isArray(req.files.images)
-      ? req.files.images
-      : [req.files.images];
-
-    // Validate images
-    const validationErrors = ImageService.validateMultipleImages(imageFiles);
-    if (validationErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Image validation failed",
-        errors: validationErrors,
-      });
-    }
-
-    // Upload images
-    const uploadedImages = await ImageService.uploadMultipleImages(
-      imageFiles,
-      "products"
-    );
-    productImages = uploadedImages.map((img, index) => ({
-      ...img,
-      isPrimary: index === 0,
-      sortOrder: index,
-      alt: `${name} - Image ${index + 1}`,
-    }));
-  }
-
-  // --- All Variant Logic Removed ---
-
-  // Generate slug
-  const slug = name
+  // slug
+  const slugBase = (name || "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+  const slug = `${slugBase}-${Date.now().toString(36).slice(-6)}`;
+
+  // images from req.files (saved by multer)
+  const images = [];
+  if (req.files && req.files.length) {
+    for (let i = 0; i < req.files.length; i++) {
+      const f = req.files[i];
+      images.push({
+        url: `${UPLOAD_FOLDER}/${f.filename}`,
+        filename: f.filename,
+        alt: `${name} - image ${i + 1}`,
+        isPrimary: i === 0,
+        sortOrder: i,
+      });
+    }
+  }
 
   const product = new Product({
     name,
@@ -73,295 +80,347 @@ export const createProduct = asyncHandler(async (req, res) => {
     shortDescription,
     category,
     brand,
-    images: productImages,
-    // 'variants' field removed
-    basePrice,
-    discountPrice,
-    // FIX: Accept tags and features as arrays, not strings
-    tags: tags || [],
-    features: features || [],
-    // 'specifications' removed
+    images,
+    basePrice: Number(basePrice || 0),
+    discountPrice: discountPrice ? Number(discountPrice) : undefined,
+    tags: Array.isArray(tags)
+      ? tags
+      : typeof tags === "string" && tags
+      ? tags.split(",").map((t) => t.trim())
+      : [],
+    features: Array.isArray(features)
+      ? features
+      : typeof features === "string" && features
+      ? features.split(",").map((t) => t.trim())
+      : [],
     status: status || "draft",
-    totalStock: 0, // Set default stock to 0
-    slug: `${slug}-${Date.now()}`,
+    slug,
+    totalStock: 0, // default 0
   });
 
-  const savedProduct = await product.save();
-  await savedProduct.populate("category");
+  const saved = await product.save();
+  await saved.populate("category", "name slug");
+  const result = saved.toObject();
+  result.images = (result.images || []).map((img) => ({
+    ...img,
+    fullUrl: buildFullUrl(req, img.url),
+  }));
 
-  res.status(201).json({
-    success: true,
-    message: "Product created successfully",
-    data: savedProduct,
-  });
+  res.status(201).json({ success: true, data: result });
 });
 
-// Get all products (This function remains unchanged)
+/* List with pagination/filter/search/sort */
 export const getProducts = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 12,
     category,
-    brand,
     status,
-    featured,
-    trending,
+    search,
     minPrice,
     maxPrice,
-    search,
     sortBy = "createdAt",
     sortOrder = "desc",
   } = req.query;
 
-  // Build query
-  const query = {};
-
-  if (category) query.category = category;
-  if (brand) query.brand = brand;
-  if (status) query.status = status;
-  if (featured !== undefined) query.featured = featured === "true";
-  if (trending !== undefined) query.trending = trending === "true";
-
+  const q = {};
+  if (category) q.category = category;
+  if (status) q.status = status;
   if (minPrice || maxPrice) {
-    query.basePrice = {};
-    if (minPrice) query.basePrice.$gte = Number(minPrice);
-    if (maxPrice) query.basePrice.$lte = Number(maxPrice);
+    q.basePrice = {};
+    if (minPrice) q.basePrice.$gte = Number(minPrice);
+    if (maxPrice) q.basePrice.$lte = Number(maxPrice);
   }
+  if (search) q.$text = { $search: search };
 
-  if (search) {
-    query.$text = { $search: search };
-  }
+  const p = Math.max(Number(page) || 1, 1);
+  const l = Math.min(Math.max(Number(limit) || 12, 1), 100);
 
-  // Calculate pagination
-  const skip = (Number(page) - 1) * Number(limit);
+  const sortObj = {};
+  sortObj[sortBy] = sortOrder === "asc" ? 1 : -1;
 
-  // Sort options
-  const sortOptions = {};
-  sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
+  const [items, total] = await Promise.all([
+    Product.find(q)
+      .populate("category", "name slug")
+      .sort(sortObj)
+      .skip((p - 1) * l)
+      .limit(l)
+      .lean(),
+    Product.countDocuments(q),
+  ]);
 
-  // Execute query with population
-  const products = await Product.find(query)
-    .populate("category", "name slug")
-    .select("-__v")
-    .sort(sortOptions)
-    .skip(skip)
-    .limit(Number(limit))
-    .lean();
+  // attach primaryImage (fullUrl) for table preview
+  const rows = items.map((prod) => {
+    const primary =
+      (prod.images || []).find((i) => i.isPrimary) ||
+      (prod.images && prod.images[0]) ||
+      null;
+    return {
+      ...prod,
+      primaryImage: primary ? primary.url : null,
+      primaryImageFullUrl: primary ? buildFullUrl(req, primary.url) : null,
+    };
+  });
 
-  const total = await Product.countDocuments(query);
-
-  res.status(200).json({
+  res.json({
     success: true,
-    data: {
-      products: products,
-      pagination: {
-        current: Number(page),
-        pages: Math.ceil(total / Number(limit)),
-        total,
-        limit: Number(limit),
-        hasNext: skip + Number(limit) < total,
-        hasPrev: Number(page) > 1,
-      },
-    },
+    data: rows,
+    pagination: { page: p, limit: l, total, pages: Math.ceil(total / l) },
   });
 });
 
-// Get single product (This function remains unchanged)
+/* Get single product */
 export const getProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id)
-    .populate("category", "name slug description")
+  const prod = await Product.findById(req.params.id)
+    .populate("category", "name slug")
     .lean();
-
-  if (!product) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found",
-    });
+  if (!prod) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
   }
-
-  // Increment view count
-  await Product.findByIdAndUpdate(req.params.id, { $inc: { viewCount: 1 } });
-
-  res.status(200).json({
-    success: true,
-    data: product,
-  });
+  prod.images = (prod.images || []).map((img) => ({
+    ...img,
+    fullUrl: buildFullUrl(req, img.url),
+  }));
+  res.json({ success: true, data: prod });
 });
 
-// Update product (Simplified)
+/* Update Product (supports adding images via req.files, and deleteFilenames array in body) */
 export const updateProduct = asyncHandler(async (req, res) => {
-  const productId = req.params.id;
-  const existingProduct = await Product.findById(productId);
-
-  if (!existingProduct) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found",
-    });
+  const id = req.params.id;
+  const existing = await Product.findById(id);
+  if (!existing) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
   }
 
-  const updateData = { ...req.body };
+  const update = { ...req.body };
 
-  // Handle new images
-  if (req.files && req.files.images) {
-    const imageFiles = Array.isArray(req.files.images)
-      ? req.files.images
-      : [req.files.images];
-    const uploadedImages = await ImageService.uploadMultipleImages(
-      imageFiles,
-      "products"
-    );
-
-    const newImages = uploadedImages.map((img, index) => ({
-      ...img,
-      isPrimary: (existingProduct.images || []).length === 0 && index === 0,
-      sortOrder: (existingProduct.images || []).length + index,
-      alt: `${updateData.name || existingProduct.name} - Image ${
-        (existingProduct.images || []).length + index + 1
-      }`,
-    }));
-
-    updateData.images = [...(existingProduct.images || []), ...newImages];
-  }
-
-  // Handle image deletions
-  if (req.body.deleteImages) {
+  // parse arrays if sent as JSON strings
+  if (typeof update.tags === "string") {
     try {
-      const imagesToDelete = JSON.parse(req.body.deleteImages);
-      if (Array.isArray(imagesToDelete)) {
-        let currentImages = updateData.images || existingProduct.images || [];
-        for (const publicId of imagesToDelete) {
-          await ImageService.deleteImage(publicId);
-          currentImages = currentImages.filter(
-            (img) => img.publicId !== publicId
-          );
+      update.tags = JSON.parse(update.tags);
+    } catch {
+      update.tags = update.tags.split(",").map((s) => s.trim());
+    }
+  }
+  if (typeof update.features === "string") {
+    try {
+      update.features = JSON.parse(update.features);
+    } catch {
+      update.features = update.features.split(",").map((s) => s.trim());
+    }
+  }
+
+  // Handle image deletions (body.deleteFilenames = JSON.stringify([...filenames]) or array)
+  if (update.deleteFilenames) {
+    try {
+      const delList =
+        typeof update.deleteFilenames === "string"
+          ? JSON.parse(update.deleteFilenames)
+          : update.deleteFilenames;
+      if (Array.isArray(delList) && delList.length) {
+        // remove from disk and product.images
+        for (const fname of delList) {
+          await removeFile(fname);
         }
-        updateData.images = currentImages;
+        existing.images = (existing.images || []).filter(
+          (img) => !delList.includes(img.filename)
+        );
       }
     } catch (e) {
-      console.error("Error parsing deleteImages: ", e);
+      // ignore parse errors but log
+      console.warn("deleteFilenames parse error", e);
     }
   }
 
-  // FIX: tags and features are now arrays, remove string split logic
-  if (updateData.tags && !Array.isArray(updateData.tags)) {
-    // Fallback if old string data is sent
-    updateData.tags = updateData.tags.split(",").map((tag) => tag.trim());
+  // Handle new images in req.files
+  if (req.files && req.files.length) {
+    const startIndex = (existing.images || []).length;
+    for (let i = 0; i < req.files.length; i++) {
+      const f = req.files[i];
+      existing.images.push({
+        url: `${UPLOAD_FOLDER}/${f.filename}`,
+        filename: f.filename,
+        alt: `${existing.name || update.name || ""} - image ${
+          startIndex + i + 1
+        }`,
+        isPrimary: (existing.images || []).length === 0 && i === 0,
+        sortOrder: startIndex + i,
+      });
+    }
   }
 
-  if (updateData.features && !Array.isArray(updateData.features)) {
-    // Fallback if old string data is sent
-    updateData.features = updateData.features
-      .split(",")
-      .map((feature) => feature.trim());
+  // Apply other updates (whitelist)
+  const allowed = [
+    "name",
+    "description",
+    "shortDescription",
+    "category",
+    "brand",
+    "basePrice",
+    "discountPrice",
+    "tags",
+    "features",
+    "status",
+    "featured",
+    "trending",
+  ];
+  for (const k of allowed) if (update[k] !== undefined) existing[k] = update[k];
+
+  // If name changed, update slug
+  if (update.name && update.name !== existing.name) {
+    existing.slug = `${update.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")}-${Date.now().toString(36).slice(-5)}`;
   }
 
-  // REMOVE specifications
-  if (updateData.specifications) {
-    delete updateData.specifications;
-  }
+  await existing.save();
+  await existing.populate("category", "name slug");
+  const out = existing.toObject();
+  out.images = (out.images || []).map((img) => ({
+    ...img,
+    fullUrl: buildFullUrl(req, img.url),
+  }));
 
-  const updatedProduct = await Product.findByIdAndUpdate(
-    productId,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate("category");
-
-  res.status(200).json({
-    success: true,
-    message: "Product updated successfully",
-    data: updatedProduct,
-  });
+  res.json({ success: true, message: "Updated", data: out });
 });
 
-// Delete product (Simplified)
+/* Delete product (also delete images from disk) */
 export const deleteProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
-
-  if (!product) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found",
-    });
+  const p = await Product.findById(req.params.id);
+  if (!p) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
   }
 
-  // Delete all product images
-  const allImages = [...(product.images || [])];
-  // --- Variant Image Logic Removed ---
-
-  if (allImages.length > 0) {
-    const publicIds = allImages.map((img) => img.publicId).filter(Boolean);
-    if (publicIds.length > 0) {
-      await ImageService.deleteMultipleImages(publicIds);
-    }
+  // delete files
+  for (const img of p.images || []) {
+    if (img.filename) await removeFile(img.filename);
   }
 
   await Product.findByIdAndDelete(req.params.id);
-
-  res.status(200).json({
-    success: true,
-    message: "Product deleted successfully",
-  });
+  res.json({ success: true, message: "Product deleted" });
 });
 
-// Reorder product images (This function remains unchanged)
-export const reorderProductImages = asyncHandler(async (req, res) => {
-  const { imageOrder } = req.body;
-
+/* Reorder images (body.imageFilenames = [filename1, filename2, ...]) */
+export const reorderImages = asyncHandler(async (req, res) => {
+  const { imageFilenames } = req.body;
   const product = await Product.findById(req.params.id);
-  if (!product) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found",
-    });
+  if (!product)
+    throw Object.assign(new Error("Product not found"), { statusCode: 404 });
+
+  if (!Array.isArray(imageFilenames)) {
+    const err = new Error("imageFilenames must be array");
+    err.statusCode = 400;
+    throw err;
   }
 
-  // Reorder images based on provided order
-  const reorderedImages = imageOrder
-    .map((publicId, index) => {
-      const image = product.images.find((img) => img.publicId === publicId);
-      if (image) {
-        return {
-          ...image.toObject(),
-          sortOrder: index,
-          isPrimary: index === 0,
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  const newImgs = [];
+  imageFilenames.forEach((fname, idx) => {
+    const img = product.images.find((x) => x.filename === fname);
+    if (img) {
+      img.sortOrder = idx;
+      img.isPrimary = idx === 0;
+      newImgs.push(img);
+    }
+  });
 
-  product.images = reorderedImages;
+  product.images = newImgs;
   await product.save();
 
-  res.status(200).json({
+  res.json({
     success: true,
-    message: "Images reordered successfully",
-    data: product,
+    message: "Images reordered",
+    data: product.images,
   });
 });
 
-// Set primary image (This function remains unchanged)
+/* Set primary image (body.filename = "abc.jpg") */
 export const setPrimaryImage = asyncHandler(async (req, res) => {
-  const { publicId } = req.body;
-
+  const { filename } = req.body;
   const product = await Product.findById(req.params.id);
-  if (!product) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found",
-    });
-  }
+  if (!product)
+    throw Object.assign(new Error("Product not found"), { statusCode: 404 });
 
-  // Reset all images to non-primary
+  let found = false;
   product.images.forEach((img) => {
-    img.isPrimary = img.publicId === publicId;
+    if (img.filename === filename) {
+      img.isPrimary = true;
+      found = true;
+    } else img.isPrimary = false;
   });
 
+  if (!found) {
+    const err = new Error("filename not found in product images");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  await product.save();
+  res.json({ success: true, message: "Primary updated" });
+});
+
+/* Get product variants (optional) - returns [] if no Variant model */
+export const getProductVariants = asyncHandler(async (req, res) => {
+  const productId = req.params.id;
+  const VariantModel =
+    mongoose.models.VariantMaster || mongoose.models.Variant || null;
+  if (!VariantModel) {
+    return res.json({ success: true, data: [] });
+  }
+  const variants = await VariantModel.find({ product: productId }).lean();
+  res.json({ success: true, data: variants });
+});
+
+/* Recalculate totalStock for product from Variant / Inventory models if present
+   This is a helper endpoint to keep product.totalStock consistent with variant/inventory changes.
+*/
+export const recalculateStock = asyncHandler(async (req, res) => {
+  const productId = req.params.id;
+  const product = await Product.findById(productId);
+  if (!product) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
+  }
+
+  // Prefer VariantMaster model -> fallback to Inventory model
+  const VariantModel =
+    mongoose.models.VariantMaster || mongoose.models.Variant || null;
+  let total = 0;
+
+  if (VariantModel) {
+    const variants = await VariantModel.find({ product: productId }).lean();
+    // Assume variants have `stock` field (number)
+    for (const v of variants) {
+      if (typeof v.stock === "number") total += v.stock;
+      else if (v.quantity && typeof v.quantity === "number")
+        total += v.quantity;
+    }
+  } else {
+    // try Inventory model
+    const InventoryModel = mongoose.models.Inventory || null;
+    if (InventoryModel) {
+      const inventories = await InventoryModel.find({
+        product: productId,
+      }).lean();
+      for (const it of inventories) {
+        if (typeof it.stock === "number") total += it.stock;
+      }
+    }
+  }
+
+  product.totalStock = total;
   await product.save();
 
-  res.status(200).json({
+  res.json({
     success: true,
-    message: "Primary image updated successfully",
+    message: "Recalculated totalStock",
+    totalStock: total,
   });
 });

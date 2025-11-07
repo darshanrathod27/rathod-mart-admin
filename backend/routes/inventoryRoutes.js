@@ -1,3 +1,4 @@
+// backend/routes/inventoryRoutes.js
 import express from "express";
 import {
   addStock,
@@ -5,20 +6,15 @@ import {
   getInventoryLedger,
   getProductVariants,
   getStockSummary,
-  getInventoryStats,
+  // getInventoryStats // implement if needed
 } from "../controllers/inventoryController.js";
-// import { protect } from "../middleware/authMiddleware.js"; // Uncomment when auth is ready
 
 const router = express.Router();
 
-// Apply protection middleware to all routes later
-// router.use(protect);
-
-router.route("/add-stock").post(addStock);
-router.route("/reduce-stock").post(reduceStock);
-router.route("/ledger").get(getInventoryLedger);
-router.route("/product-variants/:productId").get(getProductVariants);
-router.route("/stock-summary/:productId").get(getStockSummary);
-router.route("/stats").get(getInventoryStats);
+router.post("/add-stock", addStock);
+router.post("/reduce-stock", reduceStock);
+router.get("/ledger", getInventoryLedger);
+router.get("/product-variants/:productId", getProductVariants);
+router.get("/stock-summary/:productId", getStockSummary);
 
 export default router;

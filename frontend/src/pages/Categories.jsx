@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { categoryService } from "../services/categoryService";
-import { getCategoryIcon, getCategoryColor } from "../utils/categoryIcons";
 import {
   Box,
-  Typography,
   Button,
   Card,
   CardContent,
@@ -14,21 +12,13 @@ import {
   Menu,
   MenuItem,
   Avatar,
-  CircularProgress,
   Alert,
   FormControl,
   InputLabel,
   Select,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import {
-  Add,
-  Search,
-  FilterList,
-  MoreVert,
-  Edit,
-  Delete,
-} from "@mui/icons-material";
+import { Add, Search, MoreVert, Edit, Delete } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import FormModal from "../components/Modals/FormModal";
 import CategoryForm from "../components/Forms/CategoryForm";
@@ -36,109 +26,101 @@ import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 
 const Categories = () => {
-  const [categories, setCategories] = useState([]);
+  // table data
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [rowCount, setRowCount] = useState(0);
+
+  // server pagination (same as Users)
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-  const [rowCount, setRowCount] = useState(0);
+
+  // filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 500);
-  const [openModal, setOpenModal] = useState(false);
-  const [editCategory, setEditCategory] = useState(null);
-  const [anchorEl, setAnchorEl] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState(null);
+  const debouncedSearch = useDebounce(searchTerm, 500);
 
-  const fetchCategories = useCallback(async () => {
+  // modal/menu state
+  const [openModal, setOpenModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [selectedRow, setSelectedRow] = useState(null);
+
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
-      const response = await categoryService.getCategories({
+      const res = await categoryService.getCategories({
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        search: debouncedSearchTerm,
-        status: filterStatus,
+        search: debouncedSearch || undefined,
+        status: filterStatus || undefined,
+        sortBy: "createdAt",
+        sortOrder: "desc",
       });
-      // This is correct: response.data.categories
-      setCategories(response.data.categories);
-      // This is correct: response.data.pagination.total
-      setRowCount(response.data.pagination.total);
-    } catch (error) {
-      console.error("Failed to fetch categories:", error);
-      setError("Failed to load categories. Please try again.");
-      toast.error("Failed to fetch categories");
+      // backend: { success, data, pagination }
+      setRows(Array.isArray(res?.data) ? res.data : []);
+      setRowCount(res?.pagination?.total || 0);
+    } catch (e) {
+      toast.error(e.message || "Failed to fetch categories");
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, debouncedSearchTerm, filterStatus]);
+  }, [paginationModel, debouncedSearch, filterStatus]);
 
   useEffect(() => {
-    fetchCategories();
-  }, [fetchCategories]);
+    fetchData();
+  }, [fetchData]);
 
-  const handleAddCategory = () => {
-    setEditCategory(null);
+  const handleAdd = () => {
+    setEditItem(null);
     setOpenModal(true);
   };
-
-  const handleEditCategory = (category) => {
-    setEditCategory(category);
-    setOpenModal(true);
-    handleMenuClose();
+  const handleMenuClick = (e, row) => {
+    setAnchorEl(e.currentTarget);
+    setSelectedRow(row);
   };
-
-  const handleDeleteCategory = async (categoryId) => {
-    if (window.confirm("Are you sure you want to delete this category?")) {
-      try {
-        await categoryService.deleteCategory(categoryId);
-        toast.success("Category deleted successfully!");
-        fetchCategories();
-      } catch (error) {
-        const message = error.response?.data?.message || "Delete failed";
-        toast.error(message);
-      }
-    }
-    handleMenuClose();
-  };
-
-  const handleMenuClick = (event, category) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedCategory(category);
-  };
-
   const handleMenuClose = () => {
     setAnchorEl(null);
-    setSelectedCategory(null);
+    setSelectedRow(null);
+  };
+  const handleEdit = (row) => {
+    setEditItem(row);
+    setOpenModal(true);
+    handleMenuClose();
+  };
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this category?")) return;
+    try {
+      await categoryService.deleteCategory(id);
+      toast.success("Category deleted");
+      fetchData();
+    } catch (e) {
+      toast.error(e.message || "Delete failed");
+    }
+    handleMenuClose();
   };
 
   const handleFormSubmit = async (formData) => {
     try {
-      if (editCategory) {
-        await categoryService.updateCategory(editCategory._id, formData);
-        toast.success("Category updated successfully!");
+      if (editItem) {
+        await categoryService.updateCategory(editItem._id, formData);
+        toast.success("Category updated");
       } else {
         await categoryService.createCategory(formData);
-        toast.success("Category added successfully!");
+        toast.success("Category added");
       }
       setOpenModal(false);
-      fetchCategories();
-    } catch (error) {
-      const message = error.response?.data?.message || "Operation failed";
-      toast.error(message);
+      fetchData(); // refresh without reload
+    } catch (e) {
+      toast.error(e.message || "Save failed");
     }
   };
 
-  const handleFilter = () => {
-    fetchCategories();
-    toast.success("Filters applied!");
-  };
+  const statusColor = (s) => (s === "Active" ? "success" : "warning");
 
-  const getStatusColor = (status) =>
-    status === "Active" ? "success" : "warning";
-
+  // DataGrid columns (robust date)
   const columns = [
     {
       field: "icon",
@@ -149,51 +131,45 @@ const Categories = () => {
       renderCell: (params) => (
         <Avatar
           sx={{
-            bgcolor: params.row.color || getCategoryColor(params.row.name),
+            bgcolor: params.row.color || "primary.main",
             width: 40,
             height: 40,
-            fontSize: "1.5rem",
+            fontSize: 20,
           }}
         >
-          {params.row.icon || getCategoryIcon(params.row.name)}
+          {params.row.icon || "✨"}
         </Avatar>
       ),
     },
-    { field: "name", headerName: "Category Name", width: 200 },
-    { field: "description", headerName: "Description", width: 300 },
+    { field: "name", headerName: "Category Name", width: 220 },
+    { field: "description", headerName: "Description", width: 320 },
     {
       field: "productsCount",
       headerName: "Products",
       width: 120,
-      renderCell: (params) => (
-        <Chip label={params.value || 0} size="small" variant="outlined" />
+      renderCell: (p) => (
+        <Chip label={p.value || 0} size="small" variant="outlined" />
       ),
     },
     {
       field: "status",
       headerName: "Status",
       width: 120,
-      renderCell: (params) => (
-        <Chip
-          label={params.value}
-          color={getStatusColor(params.value)}
-          size="small"
-        />
+      renderCell: (p) => (
+        <Chip label={p.value} size="small" color={statusColor(p.value)} />
       ),
     },
     {
       field: "createdAt",
       headerName: "Created",
-      width: 120,
-      type: "date",
-      valueGetter: (params) => params.value && new Date(params.value),
-      renderCell: (params) => {
-        if (!params.value) {
-          return "N/A";
-        }
-        return new Date(params.value).toLocaleDateString("en-IN");
-      },
+      width: 140,
+      valueGetter: (params) => params.row?.createdAt || null,
+      renderCell: (params) =>
+        params.value
+          ? new Date(params.value).toLocaleDateString("en-IN")
+          : "N/A",
     },
+
     {
       field: "actions",
       headerName: "Actions",
@@ -211,21 +187,9 @@ const Categories = () => {
     },
   ];
 
-  if (error) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-        <Button variant="outlined" onClick={fetchCategories}>
-          Retry
-        </Button>
-      </Box>
-    );
-  }
-
   return (
     <Box>
+      {/* Top filter card — same as Users page style */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -254,9 +218,10 @@ const Categories = () => {
                     </InputAdornment>
                   ),
                 }}
-                sx={{ flexGrow: 1, minWidth: 250 }}
+                sx={{ flexGrow: 1, minWidth: 260 }}
               />
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+
+              <FormControl size="small" sx={{ minWidth: 140 }}>
                 <InputLabel>Status</InputLabel>
                 <Select
                   value={filterStatus}
@@ -270,18 +235,12 @@ const Categories = () => {
                   <MenuItem value="Inactive">Inactive</MenuItem>
                 </Select>
               </FormControl>
-              <Button
-                variant="outlined"
-                startIcon={<FilterList />}
-                onClick={handleFilter}
-              >
-                Filter
-              </Button>
+
               <Box sx={{ flexGrow: 1 }} />
               <Button
                 variant="contained"
                 startIcon={<Add />}
-                onClick={handleAddCategory}
+                onClick={handleAdd}
               >
                 Add Category
               </Button>
@@ -289,6 +248,8 @@ const Categories = () => {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Grid card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -297,7 +258,7 @@ const Categories = () => {
         <Card>
           <Box sx={{ height: 631, width: "100%" }}>
             <DataGrid
-              rows={categories}
+              rows={rows}
               columns={columns}
               getRowId={(row) => row._id}
               loading={loading}
@@ -316,30 +277,34 @@ const Categories = () => {
           </Box>
         </Card>
       </motion.div>
+
+      {/* Row actions menu */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
-        <MenuItem onClick={() => handleEditCategory(selectedCategory)}>
+        <MenuItem onClick={() => handleEdit(selectedRow)}>
           <Edit sx={{ mr: 1, fontSize: 20 }} />
           Edit
         </MenuItem>
         <MenuItem
-          onClick={() => handleDeleteCategory(selectedCategory?._id)}
+          onClick={() => selectedRow && handleDelete(selectedRow._id)}
           sx={{ color: "error.main" }}
         >
           <Delete sx={{ mr: 1, fontSize: 20 }} />
           Delete
         </MenuItem>
       </Menu>
+
+      {/* Modal with form */}
       <FormModal
         open={openModal}
         onClose={() => setOpenModal(false)}
-        title={editCategory ? "Edit Category" : "Add New Category"}
+        title={editItem ? "Edit Category" : "Add New Category"}
       >
         <CategoryForm
-          initialData={editCategory}
+          initialData={editItem}
           onSubmit={handleFormSubmit}
           onCancel={() => setOpenModal(false)}
         />

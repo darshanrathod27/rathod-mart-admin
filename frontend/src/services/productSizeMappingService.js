@@ -1,33 +1,43 @@
+// src/services/productSizeMappingService.js
 import api from "./api";
 
+const API_URL = "/product-size-mapping";
+
+/**
+ * Backend list response shape:
+ * { success: true, data: [...], pagination: { page, limit, total, pages } }
+ * We normalize to { mappings, pagination } so the rest of the app can stay the same.
+ */
 export const productSizeMappingService = {
-  // Get all size mappings
-  getSizeMappings: async (params = {}) => {
-    const response = await api.get("/product-size-mapping", { params }); // Fixed endpoint
-    return response.data;
+  async getSizeMappings(params = {}) {
+    const res = await api.get(API_URL, { params });
+    const data = Array.isArray(res.data?.data) ? res.data.data : [];
+    const pagination = res.data?.pagination || {
+      page: 1,
+      limit: data.length,
+      total: data.length,
+      pages: 1,
+    };
+    return { mappings: data, pagination };
   },
 
-  // Get single size mapping
-  getSizeMapping: async (id) => {
-    const response = await api.get(`/product-size-mapping/${id}`); // Fixed endpoint
-    return response.data;
+  async getSizeMapping(id) {
+    const res = await api.get(`${API_URL}/${id}`);
+    return res.data?.data;
   },
 
-  // Create size mapping
-  createSizeMapping: async (data) => {
-    const response = await api.post("/product-size-mapping", data); // Fixed endpoint
-    return response.data;
+  async createSizeMapping(payload) {
+    const res = await api.post(API_URL, payload);
+    return res.data?.data;
   },
 
-  // Update size mapping
-  updateSizeMapping: async (id, data) => {
-    const response = await api.put(`/product-size-mapping/${id}`, data); // Fixed endpoint
-    return response.data;
+  async updateSizeMapping(id, payload) {
+    const res = await api.put(`${API_URL}/${id}`, payload);
+    return res.data?.data;
   },
 
-  // Delete size mapping
-  deleteSizeMapping: async (id) => {
-    const response = await api.delete(`/product-size-mapping/${id}`); // Fixed endpoint
-    return response.data;
+  async deleteSizeMapping(id) {
+    const res = await api.delete(`${API_URL}/${id}`);
+    return res.data;
   },
 };

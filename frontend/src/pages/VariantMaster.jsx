@@ -1,8 +1,7 @@
+// src/pages/VariantMaster.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
-  Typography,
-  Button,
   Card,
   CardContent,
   TextField,
@@ -15,6 +14,8 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Button,
+  Typography,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -25,25 +26,41 @@ import {
   Edit,
   Delete,
 } from "@mui/icons-material";
-import { motion } from "framer-motion";
 import FormModal from "../components/Modals/FormModal";
-import VariantMasterForm from "../components/Forms/VariantMasterForm";
+import VariantManager from "../components/Forms/VariantMasterForm";
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 import { variantMasterService } from "../services/variantMasterService";
+
+const fmtDate = (d) => {
+  const date = d || null;
+  if (!date) return "-";
+  try {
+    return new Date(date).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "-";
+  }
+};
 
 const VariantMaster = () => {
   const [variants, setVariants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
   const [rowCount, setRowCount] = useState(0);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
   const [openModal, setOpenModal] = useState(false);
   const [editVariant, setEditVariant] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
@@ -53,20 +70,19 @@ const VariantMaster = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await variantMasterService.getVariants({
-        page: paginationModel.page + 1,
-        limit: paginationModel.pageSize,
-        search: debouncedSearchTerm,
-        status: filterStatus,
-      });
-      // This is correct: response.data.variants
-      setVariants(response.data.variants);
-      // This is correct: response.data.pagination.total
-      setRowCount(response.data.pagination.total);
-    } catch (error) {
-      console.error("Failed to fetch variants:", error);
-      setError("Failed to load variants. Please try again.");
-      toast.error("Failed to fetch variants");
+      const { variants: vList, pagination } =
+        await variantMasterService.getVariants({
+          page: paginationModel.page + 1,
+          limit: paginationModel.pageSize,
+          search: debouncedSearchTerm,
+          status: filterStatus,
+        });
+      setVariants(Array.isArray(vList) ? vList : []);
+      setRowCount(pagination?.total || 0);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to fetch variants");
+      toast.error(err.message || "Failed to fetch variants");
     } finally {
       setLoading(false);
     }
@@ -76,111 +92,107 @@ const VariantMaster = () => {
     fetchVariants();
   }, [fetchVariants]);
 
-  const handleAddVariant = () => {
-    setEditVariant(null);
-    setOpenModal(true);
-  };
-
-  const handleEditVariant = (variant) => {
-    setEditVariant(variant);
-    setOpenModal(true);
-    handleMenuClose();
-  };
-
-  const handleDeleteVariant = async (variantId) => {
-    if (window.confirm("Are you sure you want to delete this variant?")) {
-      try {
-        await variantMasterService.deleteVariant(variantId);
-        toast.success("Variant deleted successfully!");
-        fetchVariants();
-      } catch (error) {
-        const message = error.response?.data?.message || "Delete failed";
-        toast.error(message);
-      }
-    }
-    handleMenuClose();
-  };
-
-  const handleMenuClick = (event, variant) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedVariant(variant);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-    setSelectedVariant(null);
-  };
-
-  const handleFormSubmit = async (formData) => {
+  const handleFormSubmit = async (data) => {
     try {
       if (editVariant) {
-        await variantMasterService.updateVariant(editVariant._id, formData);
-        toast.success("Variant updated successfully!");
+        await variantMasterService.updateVariant(editVariant._id, data);
+        toast.success("Variant updated");
       } else {
-        await variantMasterService.createVariant(formData);
-        toast.success("Variant added successfully!");
+        await variantMasterService.createVariant(data);
+        toast.success("Variant(s) created");
       }
       setOpenModal(false);
+      setEditVariant(null);
       fetchVariants();
-    } catch (error) {
-      const message = error.response?.data?.message || "Operation failed";
-      toast.error(message);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Operation failed");
     }
   };
 
-  const handleFilter = () => {
-    fetchVariants();
-    toast.success("Filters applied!");
+  const handleDeleteVariant = async (id) => {
+    if (!window.confirm("Delete variant?")) return;
+    try {
+      await variantMasterService.deleteVariant(id);
+      toast.success("Variant deleted");
+      fetchVariants();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Delete failed");
+    }
   };
 
   const columns = [
     {
-      field: "product",
-      headerName: "Product Name",
-      width: 200,
-      valueGetter: (params) => params.row.product?.name || "N/A",
+      field: "productName",
+      headerName: "Product",
+      flex: 1,
+      minWidth: 220,
+      sortable: false,
+      renderCell: (p) => (
+        <Typography variant="body2" fontWeight={600}>
+          {p?.row?.product?.name || p?.row?.productName || "N/A"}
+        </Typography>
+      ),
     },
     {
-      field: "size",
+      field: "sizeName",
       headerName: "Size",
-      width: 120,
-      valueGetter: (params) => params.row.size?.sizeName || "N/A",
+      width: 140,
+      sortable: false,
+      renderCell: (p) => (
+        <Typography variant="body2">
+          {p?.row?.size?.sizeName || p?.row?.sizeName || "N/A"}
+        </Typography>
+      ),
     },
     {
-      field: "color",
+      field: "colorName",
       headerName: "Color",
-      width: 120,
-      valueGetter: (params) => params.row.color?.colorName || "N/A",
+      width: 140,
+      sortable: false,
+      renderCell: (p) => (
+        <Typography variant="body2">
+          {p?.row?.color?.colorName || p?.row?.colorName || "N/A"}
+        </Typography>
+      ),
     },
     {
       field: "price",
       headerName: "Price",
       width: 120,
-      renderCell: (params) => `₹${params.value || 0}`,
+      renderCell: (p) => {
+        const v = p?.row?.price ?? p?.row?.sellingPrice ?? p?.row?.mrp ?? 0;
+        return (
+          <Typography variant="body2">
+            ₹{Number(v).toLocaleString("en-IN")}
+          </Typography>
+        );
+      },
     },
     {
       field: "status",
       headerName: "Status",
       width: 120,
-      renderCell: (params) => (
+      renderCell: (p) => (
         <Chip
-          label={params.value}
-          color={params.value === "Active" ? "success" : "warning"}
+          label={p?.row?.status || "Inactive"}
           size="small"
-          sx={{ fontWeight: 600 }}
+          color={
+            (p?.row?.status || "").toLowerCase() === "active"
+              ? "success"
+              : "default"
+          }
         />
       ),
     },
     {
       field: "createdAt",
       headerName: "Created",
-      width: 120,
-      type: "date",
-      valueGetter: (params) => params.value && new Date(params.value),
-      renderCell: (params) => {
-        if (!params.value) return "N/A";
-        return new Date(params.value).toLocaleDateString("en-IN");
-      },
+      width: 150,
+      renderCell: (p) => (
+        <Typography variant="caption">
+          {fmtDate(p?.row?.createdAt || p?.row?.updatedAt)}
+        </Typography>
+      ),
     },
     {
       field: "actions",
@@ -188,9 +200,12 @@ const VariantMaster = () => {
       width: 80,
       sortable: false,
       filterable: false,
-      renderCell: (params) => (
+      renderCell: (p) => (
         <IconButton
-          onClick={(e) => handleMenuClick(e, params.row)}
+          onClick={(e) => {
+            setAnchorEl(e.currentTarget);
+            setSelectedVariant(p.row);
+          }}
           size="small"
         >
           <MoreVert />
@@ -202,10 +217,8 @@ const VariantMaster = () => {
   if (error) {
     return (
       <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-        <Button variant="contained" color="primary" onClick={fetchVariants}>
+        <Alert severity="error">{error}</Alert>
+        <Button onClick={fetchVariants} sx={{ mt: 2 }}>
           Retry
         </Button>
       </Box>
@@ -213,48 +226,20 @@ const VariantMaster = () => {
   }
 
   return (
-    <Box
-      component={motion.div}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      sx={{ p: { xs: 2, sm: 3 } }}
-    >
-      <Card
-        elevation={0}
-        sx={{
-          borderRadius: 3,
-          border: "1px solid",
-          borderColor: "divider",
-          overflow: "hidden",
-        }}
-      >
+    <Box sx={{ p: 3 }}>
+      <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography
-            variant="h5"
-            sx={{
-              mb: 3,
-              fontWeight: 700,
-              color: "primary.main",
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-            }}
-          >
-            Variant Master
-          </Typography>
-
           <Box
             sx={{
               display: "flex",
               gap: 2,
               mb: 3,
-              flexWrap: "wrap",
               alignItems: "center",
+              flexWrap: "wrap",
             }}
           >
             <TextField
-              placeholder="Search variants..."
+              placeholder="Search..."
               size="small"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -282,67 +267,70 @@ const VariantMaster = () => {
             <Button
               variant="outlined"
               startIcon={<FilterList />}
-              onClick={handleFilter}
+              onClick={fetchVariants}
             >
               Filter
             </Button>
             <Button
               variant="contained"
               startIcon={<Add />}
-              onClick={handleAddVariant}
-              sx={{
-                background: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-                boxShadow: "0 4px 12px rgba(76, 175, 80, 0.3)",
+              onClick={() => {
+                setEditVariant(null);
+                setOpenModal(true);
               }}
             >
               Add Variant
             </Button>
           </Box>
-
-          <DataGrid
-            rows={variants}
-            columns={columns}
-            getRowId={(row) => row._id}
-            loading={loading}
-            rowCount={rowCount}
-            pageSizeOptions={[10, 20, 50]}
-            paginationModel={paginationModel}
-            onPaginationModelChange={setPaginationModel}
-            paginationMode="server"
-            sx={{
-              border: "none",
-              "& .MuiDataGrid-columnHeaders": {
-                backgroundColor: "rgba(76, 175, 80, 0.05)",
-              },
-            }}
-          />
         </CardContent>
+      </Card>
+
+      <Card>
+        <DataGrid
+          rows={Array.isArray(variants) ? variants : []}
+          columns={columns}
+          getRowId={(row) => row._id}
+          loading={loading}
+          rowCount={rowCount}
+          pageSizeOptions={[10, 20, 50]}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          paginationMode="server"
+          disableRowSelectionOnClick
+        />
       </Card>
 
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
-        onClose={handleMenuClose}
+        onClose={() => setAnchorEl(null)}
       >
-        <MenuItem onClick={() => handleEditVariant(selectedVariant)}>
-          <Edit sx={{ mr: 1 }} fontSize="small" />
-          Edit
+        <MenuItem
+          onClick={() => {
+            setEditVariant(selectedVariant);
+            setOpenModal(true);
+            setAnchorEl(null);
+          }}
+        >
+          <Edit style={{ marginRight: 8 }} /> Edit
         </MenuItem>
         <MenuItem
-          onClick={() => handleDeleteVariant(selectedVariant?._id)}
+          onClick={() => {
+            handleDeleteVariant(selectedVariant?._id);
+            setAnchorEl(null);
+          }}
           sx={{ color: "error.main" }}
         >
-          <Delete sx={{ mr: 1 }} fontSize="small" />
-          Delete
+          <Delete style={{ marginRight: 8 }} /> Delete
         </MenuItem>
       </Menu>
 
       <FormModal
         open={openModal}
         onClose={() => setOpenModal(false)}
-        title={editVariant ? "Edit Variant" : "Add New Variant"}
+        title={editVariant ? "Edit Variant" : "Add Variant(s)"}
       >
-        <VariantMasterForm
+        <VariantManager
           initialData={editVariant}
           onSubmit={handleFormSubmit}
           onCancel={() => setOpenModal(false)}
