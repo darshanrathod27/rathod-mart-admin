@@ -1,3 +1,4 @@
+// models/Category.js
 import mongoose from "mongoose";
 
 const categorySchema = new mongoose.Schema(
@@ -6,28 +7,31 @@ const categorySchema = new mongoose.Schema(
       type: String,
       required: [true, "Category name is required"],
       trim: true,
-      maxlength: [100, "Name cannot exceed 100 characters"],
+      maxlength: 100,
     },
     description: {
       type: String,
       required: [true, "Description is required"],
       trim: true,
-      maxlength: [500, "Description cannot exceed 500 characters"],
+      maxlength: 500,
     },
     status: {
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
+      index: true,
     },
     icon: { type: String, default: "✨" },
     color: { type: String, default: "#4CAF50" },
-    slug: { type: String, lowercase: true },
+    slug: { type: String, lowercase: true, index: true },
     productsCount: { type: Number, default: 0 },
-    isDeleted: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date },
   },
   { timestamps: true }
 );
 
+// slug on create
 categorySchema.pre("save", function (next) {
   if (this.isModified("name")) {
     this.slug = this.name
@@ -38,10 +42,7 @@ categorySchema.pre("save", function (next) {
   next();
 });
 
-// Indexes
-categorySchema.index({ name: 1 }, { unique: true });
-categorySchema.index({ slug: 1 }, { unique: true });
-categorySchema.index({ isDeleted: 1 });
+// Indexes for search
+categorySchema.index({ name: "text", description: "text" });
 
-const Category = mongoose.model("Category", categorySchema);
-export default Category;
+export default mongoose.model("Category", categorySchema);

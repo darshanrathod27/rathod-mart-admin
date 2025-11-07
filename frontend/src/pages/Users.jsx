@@ -1,6 +1,7 @@
-// src/pages/Users.jsx
+// frontend/src/pages/Users.jsx
 import React, { useState, useEffect, useCallback } from "react";
-import { userService } from "../services/userService";
+import { getUsers, deleteUser } from "../services/userService";
+import UserForm from "../components/Forms/UserForm.jsx";
 import {
   Box,
   Button,
@@ -13,103 +14,92 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Typography,
-  CircularProgress,
   Alert,
   FormControl,
   InputLabel,
   Select,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import {
-  Add,
-  Search,
-  FilterList,
-  MoreVert,
-  Edit,
-  Delete,
-  Block,
-  CheckCircle,
-} from "@mui/icons-material";
+import { Add, Search, MoreVert, Edit, Delete } from "@mui/icons-material";
 import { motion } from "framer-motion";
-import FormModal from "../components/Modals/FormModal";
-import UserForm from "../components/Forms/UserForm";
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 
+// Same trick used in Products.jsx to make absolute image URLs
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const Users = () => {
+  // table data
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [rowCount, setRowCount] = useState(0);
+
+  // server pagination (same as Categories.jsx style)
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-  const [rowCount, setRowCount] = useState(0);
+
+  // filters
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 500);
-  const [openModal, setOpenModal] = useState(false);
+  const debouncedSearch = useDebounce(searchTerm, 500);
+
+  // form & menu
+  const [openForm, setOpenForm] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
 
+  // absolute image helper
+  const getAvatarUrl = (relative) => {
+    if (!relative) return null;
+    return relative.startsWith("http")
+      ? relative
+      : `${API_BASE_URL}${relative}`;
+  };
+
   const fetchUsers = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      setError(null);
-      const response = await userService.getUsers({
+      const res = await getUsers({
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        search: debouncedSearchTerm,
+        q: debouncedSearch,
         role: filterRole,
         status: filterStatus,
+        sortBy: "createdAt",
+        sortOrder: "desc",
       });
-      // This is correct: response.data.users
-      setUsers(response.data.users);
-      // This is correct: response.data.pagination.total
-      setRowCount(response.data.pagination.total);
-    } catch (error) {
-      console.error("Failed to fetch users:", error);
-      setError("Failed to load users. Please try again.");
-      toast.error("Failed to fetch users");
+
+      // normalize rows + absolute avatar url
+      const list = (res?.data || []).map((u) => ({
+        ...u,
+        _avatarUrl: getAvatarUrl(u.profileImage),
+      }));
+
+      setUsers(list);
+      setRowCount(res?.pagination?.total || 0);
+    } catch (e) {
+      toast.error(e.message || "Failed to load users");
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, debouncedSearchTerm, filterRole, filterStatus]);
+  }, [paginationModel, debouncedSearch, filterRole, filterStatus]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
-  const handleAddUser = () => {
+  const handleAdd = () => {
     setEditUser(null);
-    setOpenModal(true);
+    setOpenForm(true);
   };
 
-  const handleEditUser = (user) => {
-    setEditUser(user);
-    setOpenModal(true);
-    handleMenuClose();
-  };
-
-  const handleDeleteUser = async (userId) => {
-    if (window.confirm("Are you sure you want to delete this user?")) {
-      try {
-        await userService.deleteUser(userId);
-        toast.success("User deleted successfully!");
-        fetchUsers();
-      } catch (error) {
-        const message = error.response?.data?.message || "Delete failed";
-        toast.error(message);
-      }
-    }
-    handleMenuClose();
-  };
-
-  const handleMenuClick = (event, user) => {
-    setAnchorEl(event.currentTarget);
+  const handleMenuClick = (e, user) => {
+    setAnchorEl(e.currentTarget);
     setSelectedUser(user);
   };
 
@@ -118,54 +108,25 @@ const Users = () => {
     setSelectedUser(null);
   };
 
-  const handleFormSubmit = async (formData) => {
+  const handleEdit = (user) => {
+    setEditUser(user);
+    setOpenForm(true);
+    handleMenuClose();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this user?")) return;
     try {
-      if (editUser) {
-        await userService.updateUser(editUser._id, formData);
-        toast.success("User updated successfully!");
-      } else {
-        await userService.createUser(formData);
-        toast.success("User added successfully!");
-      }
-      setOpenModal(false);
+      await deleteUser(id);
+      toast.success("User deleted");
       fetchUsers();
-    } catch (error) {
-      const message = error.response?.data?.message || "Operation failed";
-      toast.error(message);
+    } catch (e) {
+      toast.error(e.message || "Delete failed");
     }
+    handleMenuClose();
   };
 
-  const handleFilter = () => {
-    fetchUsers();
-    toast.success("Filters applied!");
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Active":
-        return "success";
-      case "Inactive":
-        return "warning";
-      case "Blocked":
-        return "error";
-      default:
-        return "default";
-    }
-  };
-
-  const getRoleColor = (role) => {
-    switch (role) {
-      case "Admin":
-        return "primary";
-      case "Customer":
-        return "secondary";
-      case "Vendor":
-        return "info";
-      default:
-        return "default";
-    }
-  };
-
+  // ⭐ Same DataGrid feel as Categories.jsx
   const columns = [
     {
       field: "avatar",
@@ -175,30 +136,39 @@ const Users = () => {
       filterable: false,
       renderCell: (params) => (
         <Avatar
-          sx={{
-            bgcolor: "primary.main",
-            width: 35,
-            height: 35,
-            fontSize: "0.9rem",
-          }}
+          src={params.row._avatarUrl || undefined}
+          sx={{ width: 40, height: 40, bgcolor: "grey.200" }}
         >
-          {params.row.avatarInitials || params.row.name?.charAt(0)}
+          {!params.row._avatarUrl ? "👤" : null}
         </Avatar>
       ),
     },
-    { field: "name", headerName: "Name", width: 200 },
-    { field: "email", headerName: "Email", width: 250 },
-    { field: "phone", headerName: "Phone", width: 150 },
+    {
+      field: "name",
+      headerName: "Name",
+      width: 220,
+    },
+    {
+      field: "email",
+      headerName: "Email",
+      width: 260,
+    },
+    {
+      field: "phone",
+      headerName: "Phone",
+      width: 150,
+      renderCell: (p) => p.value || "—",
+    },
     {
       field: "role",
       headerName: "Role",
-      width: 120,
-      renderCell: (params) => (
+      width: 130,
+      renderCell: (p) => (
         <Chip
-          label={params.value}
-          color={getRoleColor(params.value)}
+          label={p.value || "customer"}
           size="small"
           variant="outlined"
+          color="primary"
         />
       ),
     },
@@ -206,26 +176,25 @@ const Users = () => {
       field: "status",
       headerName: "Status",
       width: 120,
-      renderCell: (params) => (
+      renderCell: (p) => (
         <Chip
-          label={params.value}
-          color={getStatusColor(params.value)}
+          label={p.value}
           size="small"
-          icon={params.value === "Active" ? <CheckCircle /> : <Block />}
+          variant="filled"
+          color={p.value === "active" ? "success" : "warning"}
         />
       ),
     },
     {
       field: "createdAt",
       headerName: "Created",
-      width: 120,
+      width: 140,
       type: "date",
-      valueGetter: (params) => params.value && new Date(params.value),
+      // MUI v7 signature => value is value
+      valueGetter: (value) => (value ? new Date(value) : null),
       renderCell: (params) => {
-        if (!params.value) {
-          return "N/A";
-        }
-        return new Date(params.value).toLocaleDateString("en-IN");
+        const v = params.value;
+        return v ? new Date(v).toLocaleDateString("en-IN") : "N/A";
       },
     },
     {
@@ -245,21 +214,9 @@ const Users = () => {
     },
   ];
 
-  if (error) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-        <Button variant="outlined" onClick={fetchUsers}>
-          Retry
-        </Button>
-      </Box>
-    );
-  }
-
   return (
     <Box>
+      {/* Top filter card — same layout as Categories */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -290,7 +247,8 @@ const Users = () => {
                 }}
                 sx={{ flexGrow: 1, minWidth: 250 }}
               />
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+
+              <FormControl size="small" sx={{ minWidth: 140 }}>
                 <InputLabel>Role</InputLabel>
                 <Select
                   value={filterRole}
@@ -300,12 +258,14 @@ const Users = () => {
                   <MenuItem value="">
                     <em>All</em>
                   </MenuItem>
-                  <MenuItem value="Admin">Admin</MenuItem>
-                  <MenuItem value="Customer">Customer</MenuItem>
-                  <MenuItem value="Vendor">Vendor</MenuItem>
+                  <MenuItem value="admin">Admin</MenuItem>
+                  <MenuItem value="manager">Manager</MenuItem>
+                  <MenuItem value="staff">Staff</MenuItem>
+                  <MenuItem value="customer">Customer</MenuItem>
                 </Select>
               </FormControl>
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+
+              <FormControl size="small" sx={{ minWidth: 140 }}>
                 <InputLabel>Status</InputLabel>
                 <Select
                   value={filterStatus}
@@ -315,23 +275,17 @@ const Users = () => {
                   <MenuItem value="">
                     <em>All</em>
                   </MenuItem>
-                  <MenuItem value="Active">Active</MenuItem>
-                  <MenuItem value="Inactive">Inactive</MenuItem>
-                  <MenuItem value="Blocked">Blocked</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="inactive">Inactive</MenuItem>
+                  <MenuItem value="blocked">Blocked</MenuItem>
                 </Select>
               </FormControl>
-              <Button
-                variant="outlined"
-                startIcon={<FilterList />}
-                onClick={handleFilter}
-              >
-                Filter
-              </Button>
+
               <Box sx={{ flexGrow: 1 }} />
               <Button
                 variant="contained"
                 startIcon={<Add />}
-                onClick={handleAddUser}
+                onClick={handleAdd}
               >
                 Add User
               </Button>
@@ -339,6 +293,8 @@ const Users = () => {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Data grid card — same styling as Categories */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -366,34 +322,38 @@ const Users = () => {
           </Box>
         </Card>
       </motion.div>
+
+      {/* Context menu */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
-        <MenuItem onClick={() => handleEditUser(selectedUser)}>
+        <MenuItem onClick={() => handleEdit(selectedUser)}>
           <Edit sx={{ mr: 1, fontSize: 20 }} />
           Edit
         </MenuItem>
         <MenuItem
-          onClick={() => handleDeleteUser(selectedUser?._id)}
+          onClick={() => selectedUser && handleDelete(selectedUser._id)}
           sx={{ color: "error.main" }}
         >
           <Delete sx={{ mr: 1, fontSize: 20 }} />
           Delete
         </MenuItem>
       </Menu>
-      <FormModal
-        open={openModal}
-        onClose={() => setOpenModal(false)}
-        title={editUser ? "Edit User" : "Add New User"}
-      >
+
+      {/* Form modal re-use */}
+      {openForm && (
         <UserForm
+          open={openForm}
+          onClose={() => setOpenForm(false)}
           initialData={editUser}
-          onSubmit={handleFormSubmit}
-          onCancel={() => setOpenModal(false)}
+          onSaved={() => {
+            setOpenForm(false);
+            fetchUsers();
+          }}
         />
-      </FormModal>
+      )}
     </Box>
   );
 };

@@ -1,3 +1,4 @@
+// src/components/Forms/ProductColorMappingForm.jsx
 import React, { useState, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
@@ -17,11 +18,12 @@ import {
   Avatar,
   Chip,
 } from "@mui/material";
-import { Save, Cancel, Palette, ColorLens } from "@mui/icons-material";
+import { Save, Cancel, ColorLens } from "@mui/icons-material";
 import { productService } from "../../services/productService";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 
+// same presets you had
 const PRESET_COLORS = [
   { name: "Red", value: "#FF0000" },
   { name: "Green", value: "#00FF00" },
@@ -45,49 +47,66 @@ const PRESET_COLORS = [
   { name: "Violet", value: "#EE82EE" },
 ];
 
-const colorMappingSchema = yup.object({
+const schema = yup.object({
   product: yup.string().required("Product selection is required"),
-  colorName: yup.string().required("Color name is required"),
+  colorName: yup.string().trim().required("Color name is required"),
   value: yup
     .string()
     .required("Color value is required")
     .matches(/^#[0-9A-F]{6}$/i, "Invalid hex color format"),
-  status: yup.string().required("Status is required"),
+  status: yup.string().oneOf(["Active", "Inactive"]).required(),
 });
 
 const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedColor, setSelectedColor] = useState(null);
 
   const {
     control,
     handleSubmit,
-    watch,
     setValue,
-    formState: { errors },
+    formState: { errors, isSubmitting },
+    watch,
   } = useForm({
-    resolver: yupResolver(colorMappingSchema),
-    defaultValues: initialData || {
-      product: "",
-      colorName: "",
-      value: "#000000",
-      status: "Active",
+    resolver: yupResolver(schema),
+    defaultValues: {
+      product:
+        (initialData?.product && initialData?.product?._id) ||
+        initialData?.product ||
+        "",
+      colorName: initialData?.colorName || "",
+      value: initialData?.value || "#000000",
+      status: initialData?.status || "Active",
     },
   });
 
   const colorValue = watch("value");
 
+  // Load ACTIVE products safely (no .filter on non-array)
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const response = await productService.getProducts({ limit: 100 });
-        setProducts(
-          response.data.products.filter((prod) => prod.status === "Active")
+        const res = await productService.getProducts({
+          limit: 1000,
+          status: "active",
+        });
+
+        let list = [];
+        if (Array.isArray(res?.data)) list = res.data;
+        else if (Array.isArray(res?.data?.products)) list = res.data.products;
+        else if (Array.isArray(res?.products)) list = res.products;
+        else if (Array.isArray(res)) list = res;
+
+        // If backend didn't filter, filter here:
+        list = (list || []).filter(
+          (p) => String(p.status || p.state || "").toLowerCase() === "active"
         );
-      } catch (error) {
-        toast.error("Failed to load products");
+
+        setProducts(list);
+      } catch (e) {
+        toast.error(e.message || "Failed to load products");
+        setProducts([]);
       } finally {
         setLoading(false);
       }
@@ -95,10 +114,9 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
     fetchProducts();
   }, []);
 
-  const handlePresetColorClick = (color) => {
-    setValue("value", color.value);
-    setValue("colorName", color.name);
-    setSelectedColor(color.value);
+  const pickPreset = (c) => {
+    setValue("value", c.value);
+    setValue("colorName", c.name);
   };
 
   return (
@@ -106,294 +124,219 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
       component={motion.div}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
     >
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4 }}
-          >
-            <FormControl fullWidth error={!!errors.product}>
-              <InputLabel>Product *</InputLabel>
-              <Controller
-                name="product"
-                control={control}
-                render={({ field }) => (
-                  <Select {...field} label="Product *" disabled={loading}>
-                    <MenuItem value="">Select Product</MenuItem>
-                    {products.map((prod) => (
-                      <MenuItem key={prod._id} value={prod._id}>
-                        {prod.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                )}
-              />
-              {errors.product && (
-                <FormHelperText>{errors.product.message}</FormHelperText>
-              )}
-            </FormControl>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-          >
+          {/* Product */}
+          <FormControl fullWidth error={!!errors.product}>
+            <InputLabel>Product *</InputLabel>
             <Controller
-              name="colorName"
+              name="product"
               control={control}
               render={({ field }) => (
-                <TextField
-                  {...field}
-                  fullWidth
-                  label="Color Name *"
-                  placeholder="e.g., Red, Blue, Green"
-                  error={!!errors.colorName}
-                  helperText={errors.colorName?.message}
-                  sx={{
-                    "& .MuiOutlinedInput-root": {
-                      "&:hover fieldset": { borderColor: "primary.main" },
-                      "&.Mui-focused fieldset": {
-                        borderColor: "primary.main",
-                        borderWidth: 2,
-                      },
-                    },
-                  }}
-                />
+                <Select {...field} label="Product *" disabled={loading}>
+                  <MenuItem value="">
+                    <em>Select Product</em>
+                  </MenuItem>
+                  {(products || []).map((p) => (
+                    <MenuItem key={p._id} value={p._id}>
+                      {p.name}
+                    </MenuItem>
+                  ))}
+                </Select>
               )}
             />
-          </motion.div>
+            {errors.product && (
+              <FormHelperText>{errors.product.message}</FormHelperText>
+            )}
+          </FormControl>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
+          {/* Color name */}
+          <Controller
+            name="colorName"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                fullWidth
+                label="Color Name *"
+                placeholder="e.g., Red, Blue"
+                error={!!errors.colorName}
+                helperText={errors.colorName?.message}
+              />
+            )}
+          />
+
+          {/* Presets */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              bgcolor: "rgba(76,175,80,.02)",
+            }}
           >
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 2,
-                bgcolor: "rgba(76, 175, 80, 0.02)",
-              }}
-            >
-              <Box
-                sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-              >
-                <ColorLens sx={{ color: "primary.main" }} />
-                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                  Select Color
-                </Typography>
-                <Chip
-                  label={`${PRESET_COLORS.length} Colors`}
-                  size="small"
-                  sx={{
-                    ml: "auto",
-                    bgcolor: "primary.main",
-                    color: "white",
-                    fontWeight: 600,
-                  }}
-                />
-              </Box>
-
-              <Grid container spacing={1.5}>
-                <AnimatePresence>
-                  {PRESET_COLORS.map((color, index) => (
-                    <Grid item xs={3} sm={2.4} md={2} key={color.name}>
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3, delay: index * 0.02 }}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Box
-                          onClick={() => handlePresetColorClick(color)}
-                          sx={{ cursor: "pointer", textAlign: "center" }}
-                        >
-                          <Avatar
-                            sx={{
-                              width: 50,
-                              height: 50,
-                              bgcolor: color.value,
-                              border:
-                                colorValue === color.value
-                                  ? "3px solid #4CAF50"
-                                  : "2px solid #ccc",
-                              margin: "0 auto",
-                              boxShadow:
-                                colorValue === color.value
-                                  ? "0 0 16px rgba(76, 175, 80, 0.6)"
-                                  : "0 2px 8px rgba(0,0,0,0.1)",
-                              transition: "all 0.3s",
-                            }}
-                          >
-                            {" "}
-                          </Avatar>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              display: "block",
-                              mt: 0.5,
-                              fontWeight:
-                                colorValue === color.value ? 700 : 500,
-                              color:
-                                colorValue === color.value
-                                  ? "primary.main"
-                                  : "text.secondary",
-                            }}
-                          >
-                            {color.name}
-                          </Typography>
-                        </Box>
-                      </motion.div>
-                    </Grid>
-                  ))}
-                </AnimatePresence>
-              </Grid>
-            </Paper>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.3 }}
-          >
-            <Paper
-              elevation={0}
-              sx={{
-                p: 2,
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 2,
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
-                Custom Color
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+              <ColorLens sx={{ color: "primary.main" }} />
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                Select Color
               </Typography>
-              <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                <Controller
-                  name="value"
-                  control={control}
-                  render={({ field }) => (
-                    <>
-                      <input
-                        type="color"
-                        value={field.value}
-                        onChange={(e) => {
-                          field.onChange(e.target.value.toUpperCase());
-                          setSelectedColor(e.target.value);
-                        }}
-                        style={{
-                          width: "70px",
-                          height: "70px",
-                          border: "3px solid #4CAF50",
-                          borderRadius: "12px",
-                          cursor: "pointer",
-                          boxShadow: "0 4px 12px rgba(76, 175, 80, 0.3)",
-                        }}
-                      />
-                      <TextField
-                        {...field}
-                        fullWidth
-                        label="Hex Color Code"
-                        placeholder="#000000"
-                        error={!!errors.value}
-                        helperText={
-                          errors.value?.message ||
-                          "Click color box or enter hex code"
-                        }
-                        inputProps={{
-                          style: {
-                            textTransform: "uppercase",
-                            fontWeight: 600,
-                          },
-                        }}
-                      />
-                    </>
-                  )}
-                />
-                <Avatar
-                  sx={{
-                    width: 70,
-                    height: 70,
-                    bgcolor: colorValue,
-                    border: "3px solid",
-                    borderColor: "divider",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-                  }}
-                >
-                  {" "}
-                </Avatar>
-              </Box>
-            </Paper>
-          </motion.div>
+              <Chip
+                label={`${PRESET_COLORS.length} Colors`}
+                size="small"
+                sx={{ ml: "auto" }}
+              />
+            </Box>
 
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.4 }}
+            <Grid container spacing={1.5}>
+              <AnimatePresence>
+                {PRESET_COLORS.map((c, i) => (
+                  <Grid item xs={3} sm={2.4} md={2} key={c.name}>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.25, delay: i * 0.02 }}
+                      whileHover={{ scale: 1.06 }}
+                    >
+                      <Box
+                        onClick={() => pickPreset(c)}
+                        sx={{ cursor: "pointer", textAlign: "center" }}
+                      >
+                        <Avatar
+                          sx={{
+                            width: 50,
+                            height: 50,
+                            bgcolor: c.value,
+                            border:
+                              colorValue === c.value
+                                ? "3px solid #4CAF50"
+                                : "2px solid #ccc",
+                            margin: "0 auto",
+                          }}
+                        />
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            mt: 0.5,
+                            fontWeight: colorValue === c.value ? 700 : 500,
+                            color:
+                              colorValue === c.value
+                                ? "primary.main"
+                                : "text.secondary",
+                          }}
+                        >
+                          {c.name}
+                        </Typography>
+                      </Box>
+                    </motion.div>
+                  </Grid>
+                ))}
+              </AnimatePresence>
+            </Grid>
+          </Paper>
+
+          {/* Custom hex + preview */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+            }}
           >
-            <FormControl fullWidth error={!!errors.status}>
-              <InputLabel>Status *</InputLabel>
+            <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
+              Custom Color
+            </Typography>
+            <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
               <Controller
-                name="status"
+                name="value"
                 control={control}
                 render={({ field }) => (
-                  <Select {...field} label="Status *">
-                    <MenuItem value="Active">Active</MenuItem>
-                    <MenuItem value="Inactive">Inactive</MenuItem>
-                  </Select>
+                  <>
+                    <input
+                      type="color"
+                      value={field.value}
+                      onChange={(e) =>
+                        field.onChange(e.target.value.toUpperCase())
+                      }
+                      style={{
+                        width: 60,
+                        height: 60,
+                        border: "3px solid #4CAF50",
+                        borderRadius: 12,
+                        cursor: "pointer",
+                      }}
+                    />
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Hex Color Code"
+                      placeholder="#000000"
+                      error={!!errors.value}
+                      helperText={
+                        errors.value?.message || "Click color or enter hex"
+                      }
+                      inputProps={{
+                        style: { textTransform: "uppercase", fontWeight: 600 },
+                      }}
+                    />
+                  </>
                 )}
               />
-              {errors.status && (
-                <FormHelperText>{errors.status.message}</FormHelperText>
-              )}
-            </FormControl>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                gap: 2,
-                justifyContent: "flex-end",
-                pt: 2,
-              }}
-            >
-              <Button
-                variant="outlined"
-                startIcon={<Cancel />}
-                onClick={onCancel}
-                sx={{ minWidth: 120 }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="contained"
-                startIcon={<Save />}
-                disabled={loading}
+              <Avatar
                 sx={{
-                  minWidth: 120,
-                  background:
-                    "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-                  boxShadow: "0 4px 12px rgba(76, 175, 80, 0.3)",
+                  width: 60,
+                  height: 60,
+                  bgcolor: colorValue,
+                  border: "3px solid",
+                  borderColor: "divider",
                 }}
-              >
-                {initialData ? "Update" : "Save"}
-              </Button>
+              />
             </Box>
-          </motion.div>
+          </Paper>
+
+          {/* Status */}
+          <FormControl fullWidth error={!!errors.status}>
+            <InputLabel>Status *</InputLabel>
+            <Controller
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <Select {...field} label="Status *">
+                  <MenuItem value="Active">Active</MenuItem>
+                  <MenuItem value="Inactive">Inactive</MenuItem>
+                </Select>
+              )}
+            />
+            {errors.status && (
+              <FormHelperText>{errors.status.message}</FormHelperText>
+            )}
+          </FormControl>
+
+          {/* Actions */}
+          <Box
+            sx={{ display: "flex", gap: 2, justifyContent: "flex-end", pt: 1 }}
+          >
+            <Button
+              variant="outlined"
+              startIcon={<Cancel />}
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              startIcon={<Save />}
+              disabled={loading || isSubmitting}
+            >
+              {initialData ? "Update" : "Save"}
+            </Button>
+          </Box>
         </Box>
       </Box>
     </Box>

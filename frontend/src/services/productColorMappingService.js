@@ -1,33 +1,42 @@
+// src/services/productColorMappingService.js
 import api from "./api";
 
+const API_URL = "/product-color-mapping";
+
+/**
+ * Backend list returns: { success, data: [...], pagination: {...} }
+ * Normalize to { mappings, pagination } for the page.
+ */
 export const productColorMappingService = {
-  // Get all color mappings
-  getColorMappings: async (params = {}) => {
-    const response = await api.get("/product-color-mapping", { params }); // Fixed endpoint
-    return response.data;
+  async getColorMappings(params = {}) {
+    const res = await api.get(API_URL, { params });
+    const data = Array.isArray(res.data?.data) ? res.data.data : [];
+    const pagination = res.data?.pagination || {
+      page: 1,
+      limit: data.length,
+      total: data.length,
+      pages: 1,
+    };
+    return { mappings: data, pagination };
   },
 
-  // Get single color mapping
-  getColorMapping: async (id) => {
-    const response = await api.get(`/product-color-mapping/${id}`); // Fixed endpoint
-    return response.data;
+  async getColorMapping(id) {
+    const res = await api.get(`${API_URL}/${id}`);
+    return res.data?.data;
   },
 
-  // Create color mapping
-  createColorMapping: async (data) => {
-    const response = await api.post("/product-color-mapping", data); // Fixed endpoint
-    return response.data;
+  async createColorMapping(payload) {
+    const res = await api.post(API_URL, payload);
+    return res.data?.data;
   },
 
-  // Update color mapping
-  updateColorMapping: async (id, data) => {
-    const response = await api.put(`/product-color-mapping/${id}`, data); // Fixed endpoint
-    return response.data;
+  async updateColorMapping(id, payload) {
+    const res = await api.put(`${API_URL}/${id}`, payload);
+    return res.data?.data;
   },
 
-  // Delete color mapping
-  deleteColorMapping: async (id) => {
-    const response = await api.delete(`/product-color-mapping/${id}`); // Fixed endpoint
-    return response.data;
+  async deleteColorMapping(id) {
+    const res = await api.delete(`${API_URL}/${id}`);
+    return res.data;
   },
 };

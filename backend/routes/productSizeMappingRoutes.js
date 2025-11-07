@@ -1,3 +1,4 @@
+// backend/routes/productSizeMappingRoutes.js
 import express from "express";
 import {
   getSizeMappings,
@@ -10,14 +11,11 @@ import {
 
 const router = express.Router();
 
-router.route("/").get(getSizeMappings).post(createSizeMapping);
-
-router.route("/product/:productId").get(getSizeMappingsByProduct);
-
-router
-  .route("/:id")
-  .get(getSizeMapping)
-  .put(updateSizeMapping)
-  .delete(deleteSizeMapping);
+router.get("/", getSizeMappings);
+router.post("/", createSizeMapping);
+router.get("/product/:productId", getSizeMappingsByProduct);
+router.get("/:id", getSizeMapping);
+router.put("/:id", updateSizeMapping);
+router.delete("/:id", deleteSizeMapping);
 
 export default router;

@@ -1,3 +1,4 @@
+// backend/routes/productColorMappingRoutes.js
 import express from "express";
 import {
   getColorMappings,
@@ -10,14 +11,11 @@ import {
 
 const router = express.Router();
 
-router.route("/").get(getColorMappings).post(createColorMapping);
-
-router.route("/product/:productId").get(getColorMappingsByProduct);
-
-router
-  .route("/:id")
-  .get(getColorMapping)
-  .put(updateColorMapping)
-  .delete(deleteColorMapping);
+router.get("/", getColorMappings);
+router.post("/", createColorMapping);
+router.get("/product/:productId", getColorMappingsByProduct);
+router.get("/:id", getColorMapping);
+router.put("/:id", updateColorMapping);
+router.delete("/:id", deleteColorMapping);
 
 export default router;

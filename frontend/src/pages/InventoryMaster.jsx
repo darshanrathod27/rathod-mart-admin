@@ -1,541 +1,430 @@
-import React, { useState, useEffect, useCallback } from "react";
+// src/pages/InventoryMaster.jsx
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Box,
-  Typography,
   Card,
+  CardContent,
   TextField,
+  InputAdornment,
+  Button,
+  MenuItem,
   FormControl,
   InputLabel,
   Select,
-  MenuItem,
+  Typography,
   Chip,
   Alert,
-  Paper,
-  CircularProgress,
+  IconButton,
+  Stack,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Inventory2, TrendingUp, TrendingDown } from "@mui/icons-material";
-import { motion } from "framer-motion";
+import { Search, Add, Remove, Refresh } from "@mui/icons-material";
+import FormModal from "../components/Modals/FormModal";
+import InventoryForm from "../components/Forms/InventoryForm";
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
-import { inventoryService } from "../services/inventoryService";
 import { productService } from "../services/productService";
+import { inventoryService } from "../services/inventoryService";
+
+const fmtDate = (d) => {
+  if (!d) return "-";
+  try {
+    return new Date(d).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "-";
+  }
+};
 
 const InventoryMaster = () => {
+  // filters
   const [products, setProducts] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState("");
+  const [productId, setProductId] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const debounced = useDebounce(searchTerm, 500);
+
+  // data
   const [variants, setVariants] = useState([]);
-  const [ledgerEntries, setLedgerEntries] = useState([]);
-  const [stockSummary, setStockSummary] = useState(null);
+  const [ledgerRows, setLedgerRows] = useState([]);
+  const [rowCount, setRowCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [filterType, setFilterType] = useState("");
+
+  // summary
+  const [summary, setSummary] = useState({
+    totalPurchase: 0,
+    totalSale: 0,
+    currentStock: 0,
+  });
+
+  // pagination
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
-    pageSize: 20,
+    pageSize: 10,
   });
-  const [rowCount, setRowCount] = useState(0);
 
-  // Fetch all products for dropdown
+  // modal
+  const [openForm, setOpenForm] = useState(false);
+  const [mode, setMode] = useState("add"); // 'add' | 'reduce'
+
+  // Load products (null-safe to different API shapes)
   useEffect(() => {
-    const fetchProducts = async () => {
+    const loadProducts = async () => {
       try {
-        // This is correct: response.data.products
-        const response = await productService.getProducts({ limit: 500 });
-        setProducts(
-          response.data.products.filter((p) => p.status === "Active")
-        );
-      } catch (error) {
+        const res = await productService.getProducts({
+          limit: 1000,
+          status: "active",
+        });
+        let list = [];
+        if (Array.isArray(res?.data)) list = res.data;
+        else if (Array.isArray(res?.data?.products)) list = res.data.products;
+        else if (Array.isArray(res?.products)) list = res.products;
+        else if (Array.isArray(res)) list = res;
+        setProducts(list || []);
+      } catch {
         toast.error("Failed to load products");
+        setProducts([]);
       }
     };
-    fetchProducts();
+    loadProducts();
   }, []);
 
-  // Fetch variants when product is selected
-  useEffect(() => {
-    if (selectedProduct) {
-      fetchProductVariants();
-      fetchStockSummary();
-    } else {
+  const fetchSummary = useCallback(async () => {
+    if (!productId) {
+      setSummary({ totalPurchase: 0, totalSale: 0, currentStock: 0 });
+      return;
+    }
+    try {
+      const s = await inventoryService.getStockSummary(productId);
+      setSummary({
+        totalPurchase: s?.totalPurchase || 0,
+        totalSale: s?.totalSale || 0,
+        currentStock: s?.currentStock || 0,
+      });
+    } catch {
+      setSummary({ totalPurchase: 0, totalSale: 0, currentStock: 0 });
+    }
+  }, [productId]);
+
+  const fetchVariants = useCallback(async () => {
+    if (!productId) {
       setVariants([]);
-      setStockSummary(null);
+      return;
     }
-  }, [selectedProduct]);
+    try {
+      const list = await inventoryService.getProductVariants(productId);
+      setVariants(Array.isArray(list) ? list : []);
+    } catch {
+      setVariants([]);
+    }
+  }, [productId]);
 
-  const fetchProductVariants = async () => {
+  const fetchLedger = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await inventoryService.getProductVariants(
-        selectedProduct
-      );
-      setVariants(response.data);
-    } catch (error) {
-      toast.error("Failed to load variants");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStockSummary = async () => {
-    try {
-      const response = await inventoryService.getStockSummary(selectedProduct);
-      setStockSummary(response.data);
-    } catch (error) {
-      console.error("Failed to load stock summary");
-    }
-  };
-
-  // Fetch ledger entries
-  const fetchLedgerEntries = useCallback(async () => {
-    if (!selectedProduct) return;
-
-    try {
-      setLoading(true);
-      const response = await inventoryService.getInventoryLedger({
-        product: selectedProduct,
-        type: filterType,
+      const res = await inventoryService.getInventoryLedger({
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
+        product: productId || undefined,
+        search: debounced || undefined,
       });
-      // This is correct: response.data.ledgers
-      setLedgerEntries(response.data.ledgers);
-      // This is correct: response.data.pagination.total
-      setRowCount(response.data.pagination.total);
-    } catch (error) {
-      toast.error("Failed to load inventory ledger");
+      const ledgers = res?.ledgers || res?.data?.ledgers || [];
+      const pagination = res?.pagination || res?.data?.pagination || {};
+      setLedgerRows(Array.isArray(ledgers) ? ledgers : []);
+      setRowCount(pagination?.total || 0);
+    } catch {
+      toast.error("Failed to fetch inventory ledger");
+      setLedgerRows([]);
+      setRowCount(0);
     } finally {
       setLoading(false);
     }
-  }, [selectedProduct, filterType, paginationModel]);
+  }, [paginationModel, productId, debounced]);
 
   useEffect(() => {
-    fetchLedgerEntries();
-  }, [fetchLedgerEntries]);
+    fetchSummary();
+    fetchVariants();
+    fetchLedger();
+  }, [fetchSummary, fetchVariants, fetchLedger]);
 
-  const handleAddStock = async (variantId, quantity) => {
-    try {
-      await inventoryService.addStock({
-        product: selectedProduct,
-        variant: variantId,
-        quantity,
-        remarks: "Stock added from Inventory Master",
-      });
-      toast.success("Stock added successfully!");
-      fetchProductVariants();
-      fetchLedgerEntries();
-      fetchStockSummary();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to add stock");
-    }
-  };
-
-  const handleReduceStock = async (variantId, quantity) => {
-    try {
-      await inventoryService.reduceStock({
-        product: selectedProduct,
-        variant: variantId,
-        quantity,
-        remarks: "Stock reduced - Manual adjustment",
-      });
-      toast.success("Stock reduced successfully!");
-      fetchProductVariants();
-      fetchLedgerEntries();
-      fetchStockSummary();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to reduce stock");
-    }
-  };
-
-  const ledgerColumns = [
-    {
-      field: "createdAt",
-      headerName: "Date & Time",
-      width: 180,
-      renderCell: (params) => (
-        <Box>
-          <Typography variant="body2" fontWeight={600}>
-            {new Date(params.value).toLocaleDateString("en-IN")}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {new Date(params.value).toLocaleTimeString("en-IN")}
-          </Typography>
-        </Box>
-      ),
-    },
-    {
-      field: "variant",
-      headerName: "Variant",
-      width: 200,
-      valueGetter: (params) => params.row.variant,
-      renderCell: (params) => {
-        if (!params.value)
-          return <Chip label="Base Product" size="small" color="primary" />;
-        return (
-          <Box>
-            <Typography variant="body2" fontWeight={500}>
-              {params.value.size?.sizeName} • {params.value.color?.colorName}
-            </Typography>
-          </Box>
-        );
+  // Columns (renderCell only → null-safe)
+  const variantColumns = useMemo(
+    () => [
+      {
+        field: "size",
+        headerName: "Size",
+        width: 140,
+        renderCell: (p) => p?.row?.size?.sizeName || p?.row?.size?.value || "—",
       },
-    },
-    {
-      field: "referenceType",
-      headerName: "Type",
-      width: 120,
-      renderCell: (params) => (
-        <Chip
-          label={params.value}
-          size="small"
-          color={params.value === "Purchase" ? "success" : "error"}
-          icon={params.value === "Purchase" ? <TrendingUp /> : <TrendingDown />}
-        />
-      ),
-    },
-    {
-      field: "type",
-      headerName: "Movement",
-      width: 100,
-      renderCell: (params) => (
-        <Chip
-          label={params.value}
-          size="small"
-          variant="outlined"
-          color={params.value === "IN" ? "success" : "error"}
-        />
-      ),
-    },
-    {
-      field: "quantity",
-      headerName: "Quantity",
-      width: 100,
-      renderCell: (params) => (
-        <Typography
-          fontWeight={600}
-          color={params.row.type === "IN" ? "success.main" : "error.main"}
-        >
-          {params.row.type === "IN" ? "+" : "-"}
-          {params.value}
-        </Typography>
-      ),
-    },
-    {
-      field: "balanceStock",
-      headerName: "Balance",
-      width: 100,
-      renderCell: (params) => (
-        <Chip
-          label={params.value}
-          size="small"
-          color={
-            params.value > 10
-              ? "success"
-              : params.value > 0
-              ? "warning"
-              : "error"
-          }
-        />
-      ),
-    },
-    {
-      field: "remarks",
-      headerName: "Remarks",
-      width: 250,
-      renderCell: (params) => (
-        <Typography variant="body2" color="text.secondary">
-          {params.value || "—"}
-        </Typography>
-      ),
-    },
-  ];
+      {
+        field: "color",
+        headerName: "Color",
+        width: 140,
+        renderCell: (p) =>
+          p?.row?.color?.colorName || p?.row?.color?.value || "—",
+      },
+      {
+        field: "price",
+        headerName: "Price",
+        width: 120,
+        renderCell: (p) => `₹${Number(p?.row?.price ?? 0)}`,
+      },
+      {
+        field: "currentStock",
+        headerName: "Stock",
+        width: 120,
+        renderCell: (p) => Number(p?.row?.currentStock ?? 0),
+      },
+      {
+        field: "status",
+        headerName: "Status",
+        width: 120,
+        renderCell: (p) => (
+          <Chip
+            size="small"
+            label={p?.row?.status || "Inactive"}
+            color={
+              (p?.row?.status || "").toLowerCase() === "active"
+                ? "success"
+                : "default"
+            }
+          />
+        ),
+      },
+    ],
+    []
+  );
+
+  const ledgerColumns = useMemo(
+    () => [
+      {
+        field: "createdAt",
+        headerName: "Date",
+        width: 150,
+        renderCell: (p) => fmtDate(p?.row?.createdAt || p?.row?.updatedAt),
+      },
+      {
+        field: "referenceType",
+        headerName: "Ref",
+        width: 110,
+        renderCell: (p) => p?.row?.referenceType || "-",
+      },
+      {
+        field: "type",
+        headerName: "Type",
+        width: 100,
+        renderCell: (p) => p?.row?.type || "-",
+      },
+      {
+        field: "quantity",
+        headerName: "Qty",
+        width: 90,
+        renderCell: (p) => Number(p?.row?.quantity ?? 0),
+      },
+      {
+        field: "balanceStock",
+        headerName: "Balance",
+        width: 110,
+        renderCell: (p) => Number(p?.row?.balanceStock ?? 0),
+      },
+      {
+        field: "product",
+        headerName: "Product",
+        width: 220,
+        renderCell: (p) => p?.row?.product?.name || p?.row?.productName || "—",
+      },
+      {
+        field: "variant",
+        headerName: "Variant",
+        width: 260,
+        renderCell: (p) => {
+          const v = p?.row?.variant;
+          if (!v) return "—";
+          const sz = v?.size?.sizeName || v?.size?.value || "";
+          const col = v?.color?.colorName || v?.color?.value || "";
+          return `${sz}${sz && col ? " • " : ""}${col}`;
+        },
+      },
+      {
+        field: "remarks",
+        headerName: "Remarks",
+        width: 240,
+        renderCell: (p) => p?.row?.remarks || "-",
+      },
+    ],
+    []
+  );
+
+  const applyFilters = () => {
+    setPaginationModel((p) => ({ ...p, page: 0 }));
+    fetchSummary();
+    fetchVariants();
+    fetchLedger();
+    toast.success("Filters applied!");
+  };
+
+  const refreshAll = () => {
+    fetchSummary();
+    fetchVariants();
+    fetchLedger();
+    toast.success("Refreshed");
+  };
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Product Selection */}
-      <Card sx={{ mb: 3, overflow: "visible" }}>
-        <Box sx={{ p: 3 }}>
-          <FormControl fullWidth>
-            <InputLabel>Select Product *</InputLabel>
-            <Select
-              value={selectedProduct}
-              onChange={(e) => setSelectedProduct(e.target.value)}
-              label="Select Product *"
-            >
-              <MenuItem value="">
-                <em>Choose a product</em>
-              </MenuItem>
-              {products.map((product) => (
-                <MenuItem key={product._id} value={product._id}>
-                  {product.name} - ₹{product.basePrice}
+      {/* Top controls kept simple like other pages */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack direction="row" gap={2} alignItems="center" flexWrap="wrap">
+            <TextField
+              placeholder="Search remarks / type..."
+              size="small"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ flexGrow: 1, minWidth: 250 }}
+            />
+            <FormControl size="small" sx={{ minWidth: 220 }}>
+              <InputLabel>Filter by Product</InputLabel>
+              <Select
+                value={productId}
+                label="Filter by Product"
+                onChange={(e) => setProductId(e.target.value)}
+              >
+                <MenuItem value="">
+                  <em>All Products</em>
                 </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
+                {(products || []).map((p) => (
+                  <MenuItem key={p._id} value={p._id}>
+                    {p.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button variant="outlined" onClick={applyFilters}>
+              Apply
+            </Button>
+            <IconButton onClick={refreshAll} title="Refresh">
+              <Refresh />
+            </IconButton>
+          </Stack>
+        </CardContent>
       </Card>
 
-      {/* Stock Summary Cards */}
-      {selectedProduct && stockSummary && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: 2,
-              mb: 3,
-            }}
+      {/* Summary chips */}
+      <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+        <Chip label={`Purchased: ${summary.totalPurchase}`} />
+        <Chip label={`Sold: ${summary.totalSale}`} />
+        <Chip
+          color="success"
+          label={`Current Stock: ${summary.currentStock}`}
+        />
+      </Box>
+
+      {/* Variants card with its own Add/Reduce actions */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ mb: 1 }}
           >
-            <Card
-              sx={{
-                background: "linear-gradient(135deg, #E8F5E8 0%, #C8E6C9 100%)",
-              }}
-            >
-              <Box sx={{ p: 2 }}>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  fontWeight={600}
-                >
-                  CURRENT STOCK
-                </Typography>
-                <Typography variant="h3" fontWeight={700} color="success.main">
-                  {stockSummary.currentStock}
-                </Typography>
-              </Box>
-            </Card>
-            <Card
-              sx={{
-                background: "linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)",
-              }}
-            >
-              <Box sx={{ p: 2 }}>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  fontWeight={600}
-                >
-                  TOTAL PURCHASE
-                </Typography>
-                <Typography variant="h3" fontWeight={700} color="primary.main">
-                  {stockSummary.totalPurchase}
-                </Typography>
-              </Box>
-            </Card>
-            <Card
-              sx={{
-                background: "linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)",
-              }}
-            >
-              <Box sx={{ p: 2 }}>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  fontWeight={600}
-                >
-                  TOTAL SALE
-                </Typography>
-                <Typography variant="h3" fontWeight={700} color="error.main">
-                  {stockSummary.totalSale}
-                </Typography>
-              </Box>
-            </Card>
-          </Box>
-        </motion.div>
-      )}
-
-      {/* Variants Table */}
-      {selectedProduct && variants.length > 0 && (
-        <Card sx={{ mb: 3 }}>
-          <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
-            <Typography variant="h6" fontWeight={600}>
-              Product Variants & Stock Management
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              Variants (with current stock)
             </Typography>
-          </Box>
-          <Box sx={{ p: 2 }}>
-            {variants.map((variant) => (
-              <Paper
-                key={variant._id}
-                elevation={0}
-                sx={{
-                  p: 2,
-                  mb: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                  borderRadius: 2,
-                  "&:hover": { boxShadow: 2 },
+            <Stack direction="row" gap={1}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<Add />}
+                onClick={() => {
+                  setMode("add");
+                  setOpenForm(true);
                 }}
+                disabled={!productId}
               >
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 2,
-                  }}
-                >
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={600}>
-                      {variant.size?.sizeName} • {variant.color?.colorName}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Price: ₹{variant.price} • SKU: {variant.sku || "N/A"}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                    <Chip
-                      label={`Stock: ${variant.currentStock}`}
-                      color={
-                        variant.currentStock > 10
-                          ? "success"
-                          : variant.currentStock > 0
-                          ? "warning"
-                          : "error"
-                      }
-                    />
-                    <TextField
-                      type="number"
-                      size="small"
-                      label="Quantity"
-                      defaultValue={10}
-                      sx={{ width: 100 }}
-                      id={`qty-${variant._id}`}
-                      inputProps={{ min: 1 }}
-                    />
-                    <Box sx={{ display: "flex", gap: 1 }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => {
-                          const qty = document.getElementById(
-                            `qty-${variant._id}`
-                          ).value;
-                          handleAddStock(variant._id, parseInt(qty));
-                        }}
-                        style={{
-                          padding: "8px 16px",
-                          background:
-                            "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        + Add
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => {
-                          const qty = document.getElementById(
-                            `qty-${variant._id}`
-                          ).value;
-                          handleReduceStock(variant._id, parseInt(qty));
-                        }}
-                        style={{
-                          padding: "8px 16px",
-                          background:
-                            "linear-gradient(135deg, #EF5350 0%, #C62828 100%)",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        - Reduce
-                      </motion.button>
-                    </Box>
-                  </Box>
-                </Box>
-              </Paper>
-            ))}
-          </Box>
-        </Card>
-      )}
+                Add Stock
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                color="error"
+                startIcon={<Remove />}
+                onClick={() => {
+                  setMode("reduce");
+                  setOpenForm(true);
+                }}
+                disabled={!productId}
+              >
+                Reduce
+              </Button>
+            </Stack>
+          </Stack>
 
-      {/* Inventory Ledger */}
-      {selectedProduct && (
-        <Card>
-          <Box sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}>
-            <Box
-              sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: 2,
-              }}
-            >
-              <Typography variant="h6" fontWeight={600}>
-                📊 Inventory Ledger
-              </Typography>
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel>Movement Type</InputLabel>
-                <Select
-                  value={filterType}
-                  onChange={(e) => setFilterType(e.target.value)}
-                  label="Movement Type"
-                >
-                  <MenuItem value="">All</MenuItem>
-                  <MenuItem value="IN">IN</MenuItem>
-                  <MenuItem value="OUT">OUT</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-          </Box>
-          <Box sx={{ height: 500 }}>
-            <DataGrid
-              rows={ledgerEntries}
-              columns={ledgerColumns}
-              getRowId={(row) => row._id}
-              loading={loading}
-              rowCount={rowCount}
-              pageSizeOptions={[20, 50, 100]}
-              paginationModel={paginationModel}
-              onPaginationModelChange={setPaginationModel}
-              paginationMode="server"
-              disableRowSelectionOnClick
-              sx={{
-                border: "none",
-                "& .MuiDataGrid-columnHeaders": {
-                  backgroundColor: "rgba(76, 175, 80, 0.05)",
-                  fontWeight: 600,
-                },
-              }}
-            />
-          </Box>
-        </Card>
-      )}
+          <DataGrid
+            autoHeight
+            rows={Array.isArray(variants) ? variants : []}
+            columns={variantColumns}
+            getRowId={(row) => row._id}
+            hideFooterPagination
+            hideFooterSelectedRowCount
+            disableRowSelectionOnClick
+          />
+        </CardContent>
+      </Card>
 
-      {/* Empty State */}
-      {!selectedProduct && (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 6,
-            textAlign: "center",
-            border: "2px dashed",
-            borderColor: "divider",
-            borderRadius: 2,
+      {/* Ledger table */}
+      <Card>
+        <CardContent>
+          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+            Inventory Ledger
+          </Typography>
+          <DataGrid
+            autoHeight
+            rows={Array.isArray(ledgerRows) ? ledgerRows : []}
+            columns={ledgerColumns}
+            getRowId={(row) => row._id}
+            loading={loading}
+            rowCount={rowCount}
+            pageSizeOptions={[10, 20, 50]}
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            paginationMode="server"
+            disableRowSelectionOnClick
+          />
+          {!productId && (
+            <Alert sx={{ mt: 2 }} severity="info">
+              Tip: Select a product to see variants and stock summary.
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add/Reduce stock modal */}
+      <FormModal
+        open={openForm}
+        onClose={() => setOpenForm(false)}
+        title={mode === "add" ? "Add Stock" : "Reduce Stock"}
+      >
+        <InventoryForm
+          productId={productId}
+          mode={mode}
+          onClose={() => setOpenForm(false)}
+          onSuccess={() => {
+            setOpenForm(false);
+            refreshAll();
           }}
-        >
-          <Inventory2 sx={{ fontSize: 64, color: "text.disabled", mb: 2 }} />
-          <Typography variant="h6" color="text.secondary" fontWeight={600}>
-            Select a product to manage inventory
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Choose a product from the dropdown above to view variants and manage
-            stock levels
-          </Typography>
-        </Paper>
-      )}
+        />
+      </FormModal>
     </Box>
   );
 };

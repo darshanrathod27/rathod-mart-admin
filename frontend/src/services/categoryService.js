@@ -1,39 +1,29 @@
 import api from "./api";
 
 export const categoryService = {
-  // Get all categories
   getCategories: async (params = {}) => {
-    const response = await api.get("/categories", { params });
-    return response.data;
+    const res = await api.get("/categories", { params });
+    // backend returns: { success, data, pagination }
+    return res.data;
   },
 
-  // Get single category
   getCategory: async (id) => {
-    const response = await api.get(`/categories/${id}`);
-    return response.data;
+    const res = await api.get(`/categories/${id}`);
+    return res.data;
   },
 
-  // Create category
-  createCategory: async (categoryData) => {
-    const response = await api.post("/categories", categoryData);
-    return response.data;
+  createCategory: async (payload) => {
+    const res = await api.post("/categories", payload);
+    return res.data;
   },
 
-  // Update category
-  updateCategory: async (id, categoryData) => {
-    const response = await api.put(`/categories/${id}`, categoryData);
-    return response.data;
+  updateCategory: async (id, payload) => {
+    const res = await api.put(`/categories/${id}`, payload);
+    return res.data;
   },
 
-  // Delete category
   deleteCategory: async (id) => {
-    const response = await api.delete(`/categories/${id}`);
-    return response.data;
-  },
-
-  // Get category stats
-  getCategoryStats: async () => {
-    const response = await api.get("/categories/stats");
-    return response.data;
+    const res = await api.delete(`/categories/${id}`);
+    return res.data;
   },
 };

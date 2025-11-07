@@ -1,195 +1,172 @@
+// backend/controllers/productSizeMappingController.js
 import asyncHandler from "../middleware/asyncHandler.js";
 import ProductSizeMapping from "../models/ProductSizeMapping.js";
 import Product from "../models/Product.js";
 
-// @desc    Get all size mappings with pagination
-// @route   GET /api/product-size-mappings
-// @access  Public
+/* LIST */
 export const getSizeMappings = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
-  const search = req.query.search || "";
-  const status = req.query.status || "";
-  const product = req.query.product || "";
+  const {
+    page = 1,
+    limit = 10,
+    product,
+    status,
+    search,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+  } = req.query;
 
-  // Build query
-  const query = { isDeleted: false };
+  const p = Math.max(Number(page) || 1, 1);
+  const l = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
-  if (status) {
-    query.status = status;
-  }
-
-  if (product) {
-    query.product = product;
-  }
-
+  const q = { isDeleted: false };
+  if (product) q.product = product;
+  if (status) q.status = status;
   if (search) {
-    query.$or = [
+    q.$or = [
       { sizeName: { $regex: search, $options: "i" } },
       { value: { $regex: search, $options: "i" } },
     ];
   }
 
-  // Execute query with pagination
-  const mappings = await ProductSizeMapping.find(query)
-    .populate("product", "name")
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
+  const sort = { [sortBy]: String(sortOrder).toLowerCase() === "asc" ? 1 : -1 };
 
-  const total = await ProductSizeMapping.countDocuments(query);
+  const [items, total] = await Promise.all([
+    ProductSizeMapping.find(q)
+      .populate("product", "name slug")
+      .sort(sort)
+      .skip((p - 1) * l)
+      .limit(l)
+      .lean(),
+    ProductSizeMapping.countDocuments(q),
+  ]);
 
-  res.status(200).json({
+  res.json({
     success: true,
-    data: {
-      mappings,
-      pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit),
-        limit,
-      },
-    },
+    data: items,
+    pagination: { page: p, limit: l, total, pages: Math.ceil(total / l) },
   });
 });
 
-// @desc    Get single size mapping
-// @route   GET /api/product-size-mappings/:id
-// @access  Public
+/* GET ONE */
 export const getSizeMapping = asyncHandler(async (req, res) => {
-  const mapping = await ProductSizeMapping.findById(req.params.id).populate(
-    "product",
-    "name"
-  );
+  const row = await ProductSizeMapping.findById(req.params.id)
+    .populate("product", "name slug")
+    .lean();
 
-  if (!mapping || mapping.isDeleted) {
-    res.status(404);
-    throw new Error("Size mapping not found");
+  if (!row || row.isDeleted) {
+    const e = new Error("Size mapping not found");
+    e.statusCode = 404;
+    throw e;
   }
-
-  res.status(200).json({
-    success: true,
-    data: mapping,
-  });
+  res.json({ success: true, data: row });
 });
 
-// @desc    Create size mapping
-// @route   POST /api/product-size-mappings
-// @access  Private/Admin
+/* CREATE */
 export const createSizeMapping = asyncHandler(async (req, res) => {
   const { product, sizeName, value, status } = req.body;
 
-  // Validate product exists
-  const productExists = await Product.findById(product);
-  if (!productExists) {
-    res.status(404);
-    throw new Error("Product not found");
+  const prod = await Product.findById(product);
+  if (!prod) {
+    const e = new Error("Product not found");
+    e.statusCode = 404;
+    throw e;
   }
 
-  // Check for duplicate
-  const existingMapping = await ProductSizeMapping.findOne({
+  const dup = await ProductSizeMapping.findOne({
     product,
-    sizeName,
+    sizeName: String(sizeName).trim(),
     isDeleted: false,
   });
-
-  if (existingMapping) {
-    res.status(400);
-    throw new Error("Size mapping already exists for this product");
+  if (dup) {
+    const e = new Error("Size mapping already exists for this product");
+    e.statusCode = 400;
+    throw e;
   }
 
-  const mapping = await ProductSizeMapping.create({
+  const created = await ProductSizeMapping.create({
     product,
-    sizeName,
-    value,
-    status,
+    sizeName: String(sizeName).trim(),
+    value: String(value).trim(),
+    status: status || "Active",
   });
 
-  const populatedMapping = await ProductSizeMapping.findById(
-    mapping._id
-  ).populate("product", "name");
+  const populated = await ProductSizeMapping.findById(created._id)
+    .populate("product", "name slug")
+    .lean();
 
-  res.status(201).json({
-    success: true,
-    message: "Size mapping created successfully",
-    data: populatedMapping,
-  });
+  res.status(201).json({ success: true, data: populated });
 });
 
-// @desc    Update size mapping
-// @route   PUT /api/product-size-mappings/:id
-// @access  Private/Admin
+/* UPDATE */
 export const updateSizeMapping = asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  const existing = await ProductSizeMapping.findById(id);
+  if (!existing || existing.isDeleted) {
+    const e = new Error("Size mapping not found");
+    e.statusCode = 404;
+    throw e;
+  }
+
   const { product, sizeName, value, status } = req.body;
 
-  const mapping = await ProductSizeMapping.findById(req.params.id);
-
-  if (!mapping || mapping.isDeleted) {
-    res.status(404);
-    throw new Error("Size mapping not found");
-  }
-
-  // If product is being changed, validate it exists
-  if (product && product !== mapping.product.toString()) {
-    const productExists = await Product.findById(product);
-    if (!productExists) {
-      res.status(404);
-      throw new Error("Product not found");
+  if (product && String(product) !== String(existing.product)) {
+    const prod = await Product.findById(product);
+    if (!prod) {
+      const e = new Error("Product not found");
+      e.statusCode = 404;
+      throw e;
     }
+    existing.product = product;
   }
 
-  // Update fields
-  mapping.product = product || mapping.product;
-  mapping.sizeName = sizeName || mapping.sizeName;
-  mapping.value = value || mapping.value;
-  mapping.status = status || mapping.status;
+  if (sizeName !== undefined) existing.sizeName = String(sizeName).trim();
+  if (value !== undefined) existing.value = String(value).trim();
+  if (status !== undefined) existing.status = status;
 
-  const updatedMapping = await mapping.save();
-  const populatedMapping = await ProductSizeMapping.findById(
-    updatedMapping._id
-  ).populate("product", "name");
-
-  res.status(200).json({
-    success: true,
-    message: "Size mapping updated successfully",
-    data: populatedMapping,
+  const dup = await ProductSizeMapping.findOne({
+    _id: { $ne: existing._id },
+    product: existing.product,
+    sizeName: existing.sizeName,
+    isDeleted: false,
   });
+  if (dup) {
+    const e = new Error("Size mapping already exists for this product");
+    e.statusCode = 400;
+    throw e;
+  }
+
+  await existing.save();
+  const out = await ProductSizeMapping.findById(existing._id)
+    .populate("product", "name slug")
+    .lean();
+
+  res.json({ success: true, data: out });
 });
 
-// @desc    Delete size mapping (soft delete)
-// @route   DELETE /api/product-size-mappings/:id
-// @access  Private/Admin
+/* DELETE (soft, like your mapping) */
 export const deleteSizeMapping = asyncHandler(async (req, res) => {
-  const mapping = await ProductSizeMapping.findById(req.params.id);
-
-  if (!mapping || mapping.isDeleted) {
-    res.status(404);
-    throw new Error("Size mapping not found");
+  const row = await ProductSizeMapping.findById(req.params.id);
+  if (!row || row.isDeleted) {
+    const e = new Error("Size mapping not found");
+    e.statusCode = 404;
+    throw e;
   }
+  row.isDeleted = true;
+  row.deletedAt = new Date();
+  await row.save();
 
-  mapping.isDeleted = true;
-  mapping.deletedAt = new Date();
-  await mapping.save();
-
-  res.status(200).json({
-    success: true,
-    message: "Size mapping deleted successfully",
-  });
+  res.json({ success: true, message: "Size mapping deleted successfully" });
 });
 
-// @desc    Get mappings by product
-// @route   GET /api/product-size-mappings/product/:productId
-// @access  Public
+/* BY PRODUCT */
 export const getSizeMappingsByProduct = asyncHandler(async (req, res) => {
-  const mappings = await ProductSizeMapping.find({
+  const list = await ProductSizeMapping.find({
     product: req.params.productId,
     isDeleted: false,
     status: "Active",
-  }).populate("product", "name");
+  })
+    .sort({ sizeName: 1 })
+    .lean();
 
-  res.status(200).json({
-    success: true,
-    data: mappings,
-  });
+  res.json({ success: true, data: list });
 });

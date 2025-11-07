@@ -1,39 +1,49 @@
+// src/services/variantMasterService.js
 import api from "./api";
 
+const API_URL = "/variant-master";
+
 export const variantMasterService = {
-  // Get all variants
-  getVariants: async (params = {}) => {
-    const response = await api.get("/variant-master", { params }); // Fixed endpoint
-    return response.data;
+  async getVariants(params = {}) {
+    const res = await api.get(API_URL, { params });
+    const data = res.data?.data;
+    const variants = Array.isArray(data?.variants)
+      ? data.variants
+      : Array.isArray(res.data?.data)
+      ? res.data.data
+      : [];
+    const pagination = data?.pagination ||
+      res.data?.pagination || {
+        page: 1,
+        limit: variants.length,
+        total: variants.length,
+        pages: 1,
+      };
+    return { variants, pagination };
   },
 
-  // Get single variant
-  getVariant: async (id) => {
-    const response = await api.get(`/variant-master/${id}`); // Fixed endpoint
-    return response.data;
+  async getVariant(id) {
+    const res = await api.get(`${API_URL}/${id}`);
+    return res.data?.data;
   },
 
-  // Create variant
-  createVariant: async (data) => {
-    const response = await api.post("/variant-master", data); // Fixed endpoint
-    return response.data;
+  async createVariant(payload) {
+    const res = await api.post(API_URL, payload);
+    return res.data;
   },
 
-  // Update variant
-  updateVariant: async (id, data) => {
-    const response = await api.put(`/variant-master/${id}`, data); // Fixed endpoint
-    return response.data;
+  async updateVariant(id, payload) {
+    const res = await api.put(`${API_URL}/${id}`, payload);
+    return res.data;
   },
 
-  // Delete variant
-  deleteVariant: async (id) => {
-    const response = await api.delete(`/variant-master/${id}`); // Fixed endpoint
-    return response.data;
+  async deleteVariant(id) {
+    const res = await api.delete(`${API_URL}/${id}`);
+    return res.data;
   },
 
-  // Get variants by product
-  getVariantsByProduct: async (productId) => {
-    const response = await api.get(`/variant-master/product/${productId}`); // Fixed endpoint
-    return response.data;
+  async getVariantsByProduct(productId) {
+    const res = await api.get(`${API_URL}/product/${productId}`);
+    return res.data?.data || [];
   },
 };

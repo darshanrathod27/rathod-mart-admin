@@ -1,7 +1,7 @@
+// src/pages/ProductColorMapping.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
-  Typography,
   Button,
   Card,
   CardContent,
@@ -15,6 +15,7 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Typography,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -33,20 +34,33 @@ import { useDebounce } from "../hooks/useDebounce";
 import { productColorMappingService } from "../services/productColorMappingService";
 import { productService } from "../services/productService";
 
+const fmtDate = (d) =>
+  d
+    ? new Date(d).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "-";
+
 const ProductColorMapping = () => {
   const [mappings, setMappings] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
   const [rowCount, setRowCount] = useState(0);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
+
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
   const [openModal, setOpenModal] = useState(false);
   const [editMapping, setEditMapping] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
@@ -56,36 +70,43 @@ const ProductColorMapping = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await productColorMappingService.getColorMappings({
-        page: paginationModel.page + 1,
-        limit: paginationModel.pageSize,
-        search: debouncedSearchTerm,
-        status: filterStatus,
-        product: filterProduct,
-      });
-      // This is correct: response.data.mappings
-      setMappings(response.data.mappings);
-      // This is correct: response.data.pagination.total
-      setRowCount(response.data.pagination.total);
-    } catch (error) {
-      setError("Failed to load mappings. Please try again.");
-      toast.error("Failed to fetch color mappings");
+      const { mappings, pagination } =
+        await productColorMappingService.getColorMappings({
+          page: paginationModel.page + 1,
+          limit: paginationModel.pageSize,
+          search: debouncedSearchTerm,
+          status: filterStatus,
+          product: filterProduct,
+        });
+      setMappings(Array.isArray(mappings) ? mappings : []);
+      setRowCount(pagination?.total || 0);
+    } catch (err) {
+      setError(err.message || "Failed to load mappings. Please try again.");
+      toast.error(err.message || "Failed to fetch color mappings");
     } finally {
       setLoading(false);
     }
   }, [paginationModel, debouncedSearchTerm, filterStatus, filterProduct]);
 
   useEffect(() => {
-    const fetchProductsForFilter = async () => {
+    const fetchProducts = async () => {
       try {
-        // This is correct: response.data.products
-        const res = await productService.getProducts({ limit: 500 });
-        setProducts(res.data.products);
-      } catch (err) {
+        const res = await productService.getProducts({
+          limit: 1000,
+          status: "active",
+        });
+        let list = [];
+        if (Array.isArray(res?.data)) list = res.data;
+        else if (Array.isArray(res?.data?.products)) list = res.data.products;
+        else if (Array.isArray(res?.products)) list = res.products;
+        else if (Array.isArray(res)) list = res;
+        setProducts(list || []);
+      } catch {
         toast.error("Could not load products for filter.");
+        setProducts([]);
       }
     };
-    fetchProductsForFilter();
+    fetchProducts();
   }, []);
 
   useEffect(() => {
@@ -96,20 +117,21 @@ const ProductColorMapping = () => {
     setEditMapping(null);
     setOpenModal(true);
   };
-  const handleEditMapping = (mapping) => {
-    setEditMapping(mapping);
+  const handleEditMapping = (row) => {
+    setEditMapping(row);
     setOpenModal(true);
     handleMenuClose();
   };
-  const handleMenuClick = (event, mapping) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedMapping(mapping);
+  const handleMenuClick = (e, row) => {
+    setAnchorEl(e.currentTarget);
+    setSelectedMapping(row);
   };
   const handleMenuClose = () => {
     setAnchorEl(null);
     setSelectedMapping(null);
   };
-  const handleFilter = () => {
+  const applyFilter = () => {
+    setPaginationModel((p) => ({ ...p, page: 0 }));
     fetchMappings();
     toast.success("Filters applied!");
   };
@@ -127,49 +149,49 @@ const ProductColorMapping = () => {
         toast.success("Mapping added successfully!");
       }
       setOpenModal(false);
-      fetchMappings();
-    } catch (error) {
-      const message = error.response?.data?.message || "Operation failed";
-      toast.error(message);
+      setEditMapping(null);
+      await fetchMappings();
+    } catch (e) {
+      toast.error(e.message || "Operation failed");
     }
   };
 
-  const handleDeleteMapping = async (mappingId) => {
-    if (window.confirm("Are you sure you want to delete this mapping?")) {
-      try {
-        await productColorMappingService.deleteColorMapping(mappingId);
-        toast.success("Mapping deleted successfully!");
-        fetchMappings();
-      } catch (error) {
-        toast.error(error.response?.data?.message || "Delete failed");
-      }
+  const handleDeleteMapping = async (id) => {
+    if (!id) return;
+    if (!window.confirm("Are you sure you want to delete this mapping?"))
+      return;
+    try {
+      await productColorMappingService.deleteColorMapping(id);
+      toast.success("Mapping deleted successfully!");
+      await fetchMappings();
+    } catch (e) {
+      toast.error(e.message || "Delete failed");
     }
     handleMenuClose();
   };
 
   const columns = [
     {
-      field: "product",
+      field: "productName",
       headerName: "Product Name",
-      width: 250,
-      valueGetter: (params) => params.row.product?.name || "N/A",
+      width: 260,
+      sortable: false,
+      renderCell: (p) => (
+        <Typography variant="body2" fontWeight={600}>
+          {p?.row?.product?.name || p?.row?.productName || "N/A"}
+        </Typography>
+      ),
     },
-    { field: "colorName", headerName: "Color Name", width: 150 },
+    { field: "colorName", headerName: "Color Name", width: 160 },
     {
       field: "value",
       headerName: "Color",
-      width: 150,
-      renderCell: (params) => (
+      width: 170,
+      sortable: false,
+      renderCell: (p) => (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Circle
-            sx={{
-              color: params.value,
-              fontSize: 24,
-              border: "1px solid #ccc",
-              borderRadius: "50%",
-            }}
-          />
-          <Typography variant="body2">{params.value}</Typography>
+          <Circle sx={{ color: p?.row?.value, fontSize: 22 }} />
+          <Typography variant="body2">{p?.row?.value || "-"}</Typography>
         </Box>
       ),
     },
@@ -177,10 +199,14 @@ const ProductColorMapping = () => {
       field: "status",
       headerName: "Status",
       width: 120,
-      renderCell: (params) => (
+      renderCell: (p) => (
         <Chip
-          label={params.value}
-          color={params.value === "Active" ? "success" : "default"}
+          label={p?.row?.status || "Inactive"}
+          color={
+            (p?.row?.status || "").toLowerCase() === "active"
+              ? "success"
+              : "default"
+          }
           size="small"
         />
       ),
@@ -188,11 +214,12 @@ const ProductColorMapping = () => {
     {
       field: "createdAt",
       headerName: "Created",
-      width: 120,
-      type: "date",
-      valueGetter: (params) => params.value && new Date(params.value),
-      renderCell: (params) =>
-        new Date(params.value).toLocaleDateString("en-IN"),
+      width: 150,
+      renderCell: (p) => (
+        <Typography variant="caption">
+          {fmtDate(p?.row?.createdAt || p?.row?.updatedAt)}
+        </Typography>
+      ),
     },
     {
       field: "actions",
@@ -200,18 +227,15 @@ const ProductColorMapping = () => {
       width: 80,
       sortable: false,
       filterable: false,
-      renderCell: (params) => (
-        <IconButton
-          onClick={(e) => handleMenuClick(e, params.row)}
-          size="small"
-        >
+      renderCell: (p) => (
+        <IconButton onClick={(e) => handleMenuClick(e, p.row)} size="small">
           <MoreVert />
         </IconButton>
       ),
     },
   ];
 
-  if (error)
+  if (error) {
     return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error">{error}</Alert>
@@ -220,6 +244,7 @@ const ProductColorMapping = () => {
         </Button>
       </Box>
     );
+  }
 
   return (
     <Box>
@@ -245,6 +270,7 @@ const ProductColorMapping = () => {
                 ),
               }}
               sx={{ flexGrow: 1, minWidth: 250 }}
+              size="small"
             />
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <InputLabel>Filter By Product</InputLabel>
@@ -256,7 +282,7 @@ const ProductColorMapping = () => {
                 <MenuItem value="">
                   <em>All Products</em>
                 </MenuItem>
-                {products.map((p) => (
+                {(products || []).map((p) => (
                   <MenuItem key={p._id} value={p._id}>
                     {p.name}
                   </MenuItem>
@@ -278,7 +304,7 @@ const ProductColorMapping = () => {
             <Button
               variant="outlined"
               startIcon={<FilterList />}
-              onClick={handleFilter}
+              onClick={applyFilter}
             >
               Filter
             </Button>
@@ -292,9 +318,10 @@ const ProductColorMapping = () => {
           </Box>
         </CardContent>
       </Card>
+
       <Card>
         <DataGrid
-          rows={mappings}
+          rows={Array.isArray(mappings) ? mappings : []}
           columns={columns}
           getRowId={(row) => row._id}
           loading={loading}
@@ -303,6 +330,7 @@ const ProductColorMapping = () => {
           paginationModel={paginationModel}
           onPaginationModelChange={setPaginationModel}
           paginationMode="server"
+          disableRowSelectionOnClick
           sx={{
             border: "none",
             "& .MuiDataGrid-columnHeaders": {
@@ -311,6 +339,7 @@ const ProductColorMapping = () => {
           }}
         />
       </Card>
+
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
@@ -326,15 +355,22 @@ const ProductColorMapping = () => {
           <Delete sx={{ mr: 1 }} /> Delete
         </MenuItem>
       </Menu>
+
       <FormModal
         open={openModal}
-        onClose={() => setOpenModal(false)}
+        onClose={() => {
+          setOpenModal(false);
+          setEditMapping(null);
+        }}
         title={editMapping ? "Edit Color Mapping" : "Add New Color Mapping"}
       >
         <ProductColorMappingForm
           initialData={editMapping}
           onSubmit={handleFormSubmit}
-          onCancel={() => setOpenModal(false)}
+          onCancel={() => {
+            setOpenModal(false);
+            setEditMapping(null);
+          }}
         />
       </FormModal>
     </Box>

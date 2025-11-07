@@ -1,5 +1,5 @@
-// frontend/src/components/Modals/ImageUploadModal.jsx
-import React, { useState, useEffect, useCallback } from "react";
+// src/components/Modals/ImageUploadModal.jsx
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -13,348 +13,479 @@ import {
   IconButton,
   Typography,
   Box,
-  Chip,
   LinearProgress,
-  Alert,
-  Tooltip,
-  Badge,
+  Paper,
+  alpha,
+  Stack,
 } from "@mui/material";
 import {
   CloudUpload,
   Delete,
   Star,
   StarBorder,
-  Add,
+  Edit,
   Close,
 } from "@mui/icons-material";
 import { productService } from "../../services/productService";
 import toast from "react-hot-toast";
+import ReactCrop from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-const ImageUploadModal = ({ open, onClose, product, onUploadSuccess }) => {
-  const [images, setImages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+// Helper function to create cropped image
+const getCroppedImg = async (imageSrc, pixelCrop) => {
+  const image = new Image();
+  image.src = imageSrc;
 
-  const fetchImages = useCallback(async () => {
-    if (!product?._id) return;
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = reject;
+  });
 
-    setLoading(true);
-    try {
-      const response = await productService.getProductImages(product._id);
-      const imagesWithUrls = response.data.map((img) => ({
-        ...img,
-        fullImageUrl: img.fullImageUrl || `${API_BASE_URL}${img.imageUrl}`,
-      }));
-      setImages(imagesWithUrls);
-    } catch (error) {
-      console.error("Failed to fetch images:", error);
-      toast.error("Failed to load product images");
-    } finally {
-      setLoading(false);
-    }
-  }, [product?._id]);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
 
-  useEffect(() => {
-    if (open) {
-      fetchImages();
-    }
-  }, [open, fetchImages]);
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
 
-  const handleFileSelect = (event) => {
-    const files = Array.from(event.target.files);
-    if (files.length > 0) {
-      handleImageUpload(files);
-    }
-  };
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
 
-  const handleImageUpload = async (files) => {
-    if (!files?.length) return;
-
-    setUploading(true);
-    setUploadProgress(0);
-
-    try {
-      const formData = new FormData();
-
-      if (files.length === 1) {
-        formData.append("image", files[0]);
-        const response = await productService.uploadProductImage(
-          product._id,
-          formData
-        );
-        toast.success("Image uploaded successfully!");
-      } else {
-        files.forEach((file) => {
-          formData.append("images", file);
-        });
-        const response = await productService.uploadMultipleProductImages(
-          product._id,
-          formData
-        );
-        toast.success(`${files.length} images uploaded successfully!`);
-      }
-
-      await fetchImages();
-      if (onUploadSuccess) {
-        onUploadSuccess();
-      }
-    } catch (error) {
-      console.error("Upload failed:", error);
-      toast.error(error.response?.data?.message || "Failed to upload images");
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  };
-
-  const handleDeleteImage = async (imageId) => {
-    if (!window.confirm("Are you sure you want to delete this image?")) return;
-
-    try {
-      await productService.deleteProductImage(imageId);
-      toast.success("Image deleted successfully!");
-      await fetchImages();
-      if (onUploadSuccess) {
-        onUploadSuccess();
-      }
-    } catch (error) {
-      console.error("Delete failed:", error);
-      toast.error("Failed to delete image");
-    }
-  };
-
-  const handleSetPrimary = async (imageId) => {
-    try {
-      await productService.updateProductImage(imageId, { isPrimary: true });
-      toast.success("Primary image updated!");
-      await fetchImages();
-      if (onUploadSuccess) {
-        onUploadSuccess();
-      }
-    } catch (error) {
-      console.error("Update failed:", error);
-      toast.error("Failed to update primary image");
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const files = Array.from(e.dataTransfer.files).filter((file) =>
-      file.type.startsWith("image/")
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        resolve(blob);
+      },
+      "image/jpeg",
+      0.95
     );
+  });
+};
 
-    if (files.length > 0) {
-      handleImageUpload(files);
+const CropDialog = ({ open, src, onCancel, onApply }) => {
+  const [crop, setCrop] = useState();
+  const [completedCrop, setCompletedCrop] = useState();
+  const imgRef = useRef(null);
+
+  const onLoad = useCallback((img) => {
+    imgRef.current = img;
+    const aspect = 1;
+    const width = img.width > img.height ? (img.height / img.width) * 100 : 100;
+    const height =
+      img.height > img.width ? (img.width / img.height) * 100 : 100;
+    const x = (100 - width) / 2;
+    const y = (100 - height) / 2;
+
+    setCrop({
+      unit: "%",
+      width: Math.min(width, height) * 0.8,
+      height: Math.min(width, height) * 0.8,
+      x: x + width * 0.1,
+      y: y + height * 0.1,
+      aspect,
+    });
+  }, []);
+
+  const handleApply = async () => {
+    if (!completedCrop || !imgRef.current) {
+      toast.error("Please select a crop area");
+      return;
+    }
+
+    try {
+      const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
+      const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
+
+      const pixelCrop = {
+        x: completedCrop.x * scaleX,
+        y: completedCrop.y * scaleY,
+        width: completedCrop.width * scaleX,
+        height: completedCrop.height * scaleY,
+      };
+
+      const blob = await getCroppedImg(imgRef.current.src, pixelCrop);
+      onApply(blob);
+    } catch (error) {
+      console.error("Crop error:", error);
+      toast.error("Failed to crop image");
     }
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="lg"
-      fullWidth
-      PaperProps={{
-        sx: { minHeight: "70vh" },
-      }}
-    >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box>
-            <Typography variant="h6">Manage Product Images</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {product?.name}
-            </Typography>
-          </Box>
-          <IconButton onClick={onClose} size="small">
+    <Dialog open={open} onClose={onCancel} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+        >
+          <Typography variant="h6">Crop Image</Typography>
+          <IconButton size="small" onClick={onCancel}>
             <Close />
           </IconButton>
-        </Box>
+        </Stack>
       </DialogTitle>
-
-      <DialogContent dividers>
-        {loading ? (
-          <Box display="flex" justifyContent="center" py={4}>
-            <LinearProgress sx={{ width: "100%" }} />
-          </Box>
-        ) : (
-          <>
-            {/* Upload Area */}
-            <Card
-              sx={{
-                p: 3,
-                mb: 3,
-                border: "2px dashed #ccc",
-                backgroundColor: "grey.50",
-                cursor: "pointer",
-                "&:hover": {
-                  borderColor: "primary.main",
-                  backgroundColor: "primary.light",
-                  color: "white",
-                },
-              }}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onClick={() =>
-                document.getElementById("image-upload-input").click()
-              }
+      <DialogContent>
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 1 }}>
+          {src && (
+            <ReactCrop
+              crop={crop}
+              onChange={(c) => setCrop(c)}
+              onComplete={(c) => setCompletedCrop(c)}
+              aspect={1}
             >
-              <Box textAlign="center">
-                <CloudUpload sx={{ fontSize: 48, mb: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  Upload Product Images
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Click to select files or drag and drop images here
-                </Typography>
-                <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                  Supported formats: JPG, PNG, WebP (Max 5MB each)
-                </Typography>
-              </Box>
-              <input
-                id="image-upload-input"
-                type="file"
-                multiple
-                accept="image/*"
-                style={{ display: "none" }}
-                onChange={handleFileSelect}
+              <img
+                ref={imgRef}
+                src={src}
+                onLoad={(e) => onLoad(e.currentTarget)}
+                style={{ maxWidth: "100%", maxHeight: "60vh" }}
+                alt="Crop"
               />
-            </Card>
-
-            {uploading && (
-              <Box sx={{ mb: 2 }}>
-                <LinearProgress variant="indeterminate" />
-                <Typography variant="body2" textAlign="center" sx={{ mt: 1 }}>
-                  Uploading images...
-                </Typography>
-              </Box>
-            )}
-
-            {/* Current Images */}
-            {images.length > 0 ? (
-              <Grid container spacing={2}>
-                {images.map((image) => (
-                  <Grid item xs={12} sm={6} md={4} lg={3} key={image._id}>
-                    <Card sx={{ position: "relative", height: "100%" }}>
-                      {image.isPrimary && (
-                        <Chip
-                          label="Primary"
-                          color="primary"
-                          size="small"
-                          sx={{
-                            position: "absolute",
-                            top: 8,
-                            left: 8,
-                            zIndex: 1,
-                          }}
-                        />
-                      )}
-
-                      <CardMedia
-                        component="img"
-                        height="200"
-                        image={image.fullImageUrl}
-                        alt={image.altText || `Product image`}
-                        sx={{
-                          objectFit: "cover",
-                          cursor: "pointer",
-                          "&:hover": {
-                            opacity: 0.8,
-                          },
-                        }}
-                        onError={(e) => {
-                          e.target.src = "/placeholder-image.png";
-                        }}
-                      />
-
-                      <CardActions
-                        sx={{ justifyContent: "space-between", p: 1 }}
-                      >
-                        <Tooltip
-                          title={
-                            image.isPrimary ? "Primary image" : "Set as primary"
-                          }
-                        >
-                          <IconButton
-                            size="small"
-                            onClick={() => handleSetPrimary(image._id)}
-                            disabled={image.isPrimary}
-                            color={image.isPrimary ? "primary" : "default"}
-                          >
-                            {image.isPrimary ? <Star /> : <StarBorder />}
-                          </IconButton>
-                        </Tooltip>
-
-                        <Tooltip title="Delete image">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDeleteImage(image._id)}
-                            color="error"
-                          >
-                            <Delete />
-                          </IconButton>
-                        </Tooltip>
-                      </CardActions>
-
-                      {/* Image Info */}
-                      <Box sx={{ px: 1, pb: 1 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {image.originalName || image.fileName}
-                        </Typography>
-                        {image.size && (
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            display="block"
-                          >
-                            Size: {(image.size / 1024 / 1024).toFixed(2)} MB
-                          </Typography>
-                        )}
-                      </Box>
-                    </Card>
-                  </Grid>
-                ))}
-              </Grid>
-            ) : (
-              <Box textAlign="center" py={4}>
-                <Typography variant="h6" color="text.secondary" gutterBottom>
-                  No images uploaded yet
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Upload some images to get started
-                </Typography>
-              </Box>
-            )}
-          </>
-        )}
+            </ReactCrop>
+          )}
+        </Box>
       </DialogContent>
-
-      <DialogActions sx={{ p: 2, gap: 1 }}>
-        <Button variant="outlined" onClick={onClose}>
-          Close
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onCancel} color="inherit">
+          Cancel
         </Button>
         <Button
+          onClick={handleApply}
           variant="contained"
-          startIcon={<Add />}
-          onClick={() => document.getElementById("image-upload-input").click()}
-          disabled={uploading}
+          disabled={!completedCrop}
         >
-          Add More Images
+          Apply & Upload
         </Button>
       </DialogActions>
     </Dialog>
   );
 };
 
-export default ImageUploadModal;
+export default function ImageUploadModal({
+  open,
+  onClose,
+  product,
+  onUploadSuccess,
+}) {
+  const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const [pendingSrc, setPendingSrc] = useState(null);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [showCrop, setShowCrop] = useState(false);
+
+  const [reCrop, setReCrop] = useState(null);
+
+  const fetchImages = useCallback(async () => {
+    if (!product?._id) return;
+    setLoading(true);
+    try {
+      const imgs = await productService.getProductImages(product._id);
+      setImages(imgs || []);
+    } catch (e) {
+      console.error("Fetch images error:", e);
+      toast.error("Failed to load images");
+    } finally {
+      setLoading(false);
+    }
+  }, [product]);
+
+  useEffect(() => {
+    if (open) fetchImages();
+  }, [open, fetchImages]);
+
+  const onInputChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPendingFile(file);
+    const src = URL.createObjectURL(file);
+    setPendingSrc(src);
+    setShowCrop(true);
+    e.target.value = "";
+  };
+
+  const applyNewCropAndUpload = async (blob) => {
+    setShowCrop(false);
+    setUploading(true);
+    try {
+      const file = new File(
+        [blob],
+        pendingFile?.name || `img-${Date.now()}.jpg`,
+        { type: "image/jpeg" }
+      );
+      const fd = new FormData();
+      fd.append("images", file);
+      await productService.uploadMultipleProductImages(product._id, fd);
+      toast.success("Image uploaded");
+      setPendingSrc(null);
+      setPendingFile(null);
+      await fetchImages();
+      onUploadSuccess?.();
+    } catch (e) {
+      console.error("Upload error:", e);
+      toast.error("Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (img) => {
+    if (!window.confirm("Delete this image?")) return;
+    try {
+      const filename = img.filename || img._id;
+      await productService.deleteProductImage(product._id, filename);
+      toast.success("Image deleted");
+      await fetchImages();
+      onUploadSuccess?.();
+    } catch (err) {
+      console.error("Delete error:", err);
+      toast.error("Delete failed");
+    }
+  };
+
+  const handleSetPrimary = async (img) => {
+    try {
+      const filename = img.filename || img._id;
+      await productService.setPrimaryImage(product._id, filename);
+      toast.success("Primary image updated");
+      await fetchImages();
+      onUploadSuccess?.();
+    } catch (err) {
+      console.error("Set primary error:", err);
+      toast.error("Update failed");
+    }
+  };
+
+  const openReCrop = (img) => {
+    const src =
+      img.fullUrl ||
+      img.fullImageUrl ||
+      `${API_BASE_URL}${img.url || img.imageUrl}`;
+    setReCrop({ img, src });
+  };
+
+  const applyReCrop = async (blob) => {
+    setReCrop(null);
+    setUploading(true);
+    try {
+      const file = new File([blob], `recrop-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      });
+      const fd = new FormData();
+      fd.append("images", file);
+      await productService.uploadMultipleProductImages(product._id, fd);
+
+      try {
+        await productService.deleteProductImage(
+          product._id,
+          reCrop.img.filename || reCrop.img._id
+        );
+      } catch {}
+
+      toast.success("Image updated");
+      await fetchImages();
+      onUploadSuccess?.();
+    } catch (e) {
+      console.error("Re-crop error:", e);
+      toast.error("Update failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            <Box>
+              <Typography variant="h6" fontWeight={600}>
+                Product Images
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {product?.name}
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <label htmlFor="prod-img-input">
+                <input
+                  id="prod-img-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={onInputChange}
+                  style={{ display: "none" }}
+                />
+                <Button
+                  component="span"
+                  variant="contained"
+                  startIcon={<CloudUpload />}
+                  size="small"
+                >
+                  Upload
+                </Button>
+              </label>
+              <IconButton size="small" onClick={onClose}>
+                <Close />
+              </IconButton>
+            </Stack>
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent sx={{ minHeight: 300 }}>
+          {(uploading || loading) && <LinearProgress sx={{ mb: 2 }} />}
+
+          {images.length === 0 && !loading ? (
+            <Paper
+              sx={{
+                p: 6,
+                border: "2px dashed",
+                borderColor: "grey.300",
+                textAlign: "center",
+                bgcolor: alpha("#f5f5f5", 0.3),
+              }}
+            >
+              <CloudUpload sx={{ fontSize: 48, color: "grey.400", mb: 1 }} />
+              <Typography variant="body1" color="text.secondary" gutterBottom>
+                No images yet
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Click "Upload" to add images
+              </Typography>
+            </Paper>
+          ) : (
+            <Grid container spacing={2}>
+              {images.map((img, idx) => {
+                const imgSrc =
+                  img.fullUrl ||
+                  img.fullImageUrl ||
+                  `${API_BASE_URL}${img.url || img.imageUrl}`;
+                return (
+                  <Grid
+                    item
+                    xs={6}
+                    sm={4}
+                    md={3}
+                    key={img.filename || img._id || idx}
+                  >
+                    <Card
+                      sx={{
+                        position: "relative",
+                        border: "1px solid",
+                        borderColor: img.isPrimary
+                          ? "primary.main"
+                          : "grey.300",
+                        transition: "all 0.2s",
+                        "&:hover": { boxShadow: 3 },
+                      }}
+                    >
+                      {img.isPrimary && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: 6,
+                            left: 6,
+                            zIndex: 1,
+                            bgcolor: "primary.main",
+                            color: "white",
+                            px: 1,
+                            py: 0.25,
+                            borderRadius: 0.5,
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          Primary
+                        </Box>
+                      )}
+                      <CardMedia
+                        component="img"
+                        height="140"
+                        image={imgSrc}
+                        alt=""
+                        sx={{ objectFit: "cover" }}
+                      />
+                      <CardActions
+                        sx={{ justifyContent: "space-between", p: 1 }}
+                      >
+                        <Stack direction="row" spacing={0.5}>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleSetPrimary(img)}
+                            disabled={img.isPrimary}
+                          >
+                            {img.isPrimary ? (
+                              <Star fontSize="small" color="primary" />
+                            ) : (
+                              <StarBorder fontSize="small" />
+                            )}
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => openReCrop(img)}
+                          >
+                            <Edit fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDelete(img)}
+                        >
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={onClose} variant="contained" size="small">
+            Done
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {showCrop && pendingSrc && (
+        <CropDialog
+          open={showCrop}
+          src={pendingSrc}
+          onCancel={() => {
+            setShowCrop(false);
+            setPendingSrc(null);
+            setPendingFile(null);
+          }}
+          onApply={applyNewCropAndUpload}
+        />
+      )}
+
+      {reCrop && (
+        <CropDialog
+          open={Boolean(reCrop)}
+          src={reCrop.src}
+          onCancel={() => setReCrop(null)}
+          onApply={applyReCrop}
+        />
+      )}
+    </>
+  );
+}

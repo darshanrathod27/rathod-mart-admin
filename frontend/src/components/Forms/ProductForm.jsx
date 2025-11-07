@@ -1,483 +1,735 @@
-import React, { useState, useEffect } from "react";
+// src/components/Forms/ProductForm.jsx
+import React, { useEffect, useState } from "react";
+import PropTypes from "prop-types";
+
 import {
   Box,
-  Paper,
-  Typography,
   TextField,
   Button,
-  Grid,
-  FormControl,
-  InputLabel,
-  Select,
   MenuItem,
   Chip,
-  Autocomplete,
-  Switch,
+  Stack,
+  Typography,
   FormControlLabel,
+  Switch,
+  InputAdornment,
   Divider,
-  Tabs,
-  Tab,
-  InputAdornment, // Added for discount %
+  IconButton,
+  DialogActions,
 } from "@mui/material";
-import { Save as SaveIcon, Add as AddIcon } from "@mui/icons-material";
+import SaveIcon from "@mui/icons-material/Save";
+import Inventory2Icon from "@mui/icons-material/Inventory2";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import CloseIcon from "@mui/icons-material/Close";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import ImageUploadManager from "../ImageUpload/ImageUploadManager";
-// import VariantManager from "./VariantManager"; // --- REMOVED ---
 
-// Validation schema
-const productSchema = yup.object({
-  name: yup
-    .string()
-    .required("Product name is required")
-    .min(2, "Name too short"),
-  description: yup
-    .string()
-    .required("Description is required")
-    .min(10, "Description too short"),
+import {
+  StyledFormDialog,
+  formHeaderStyles,
+  fieldContainerStyles,
+  textFieldStyles,
+  formActionsStyles,
+  cancelButtonStyles,
+  submitButtonStyles,
+  sectionHeaderStyles,
+} from "../../theme/FormStyles";
+
+/* --------------- validation schema --------------- */
+const schema = yup.object({
+  name: yup.string().trim().required("Product name is required"),
+  description: yup.string().trim().required("Description is required"),
   category: yup.string().required("Category is required"),
   basePrice: yup
     .number()
-    .required("Price is required")
-    .min(0, "Price must be positive"),
-  brand: yup.string(),
-  shortDescription: yup.string().max(200, "Short description too long"),
-  discountPrice: yup.number().min(0, "Discount price must be positive"),
+    .typeError("Base price must be a number")
+    .min(0, "Price must be >= 0")
+    .required("Base price is required"),
   discountPercentage: yup
     .number()
-    .min(0, "Discount must be at least 0%")
-    .max(100, "Discount cannot exceed 100%")
-    .nullable(true)
-    .transform((value) => (!!value ? value : null)),
+    .typeError("Must be a number")
+    .min(0, ">= 0")
+    .max(100, "<= 100")
+    .nullable()
+    .transform((v) => (v === "" ? null : v)),
 });
 
-// Helper to get initial discount percentage
-const getInitialDiscountPerc = (initialData) => {
-  if (
-    !initialData ||
-    !initialData.basePrice ||
-    initialData.discountPrice === null ||
-    initialData.discountPrice === undefined
-  )
-    return ""; // Return empty string instead of 0
-  if (initialData.basePrice === 0) return 0;
-  const perc =
-    (100 * (initialData.basePrice - initialData.discountPrice)) /
-    initialData.basePrice;
-  return perc.toFixed(0);
-};
+export default function ProductForm({
+  initialData = null,
+  onSubmit,
+  onCancel,
+  categories = [],
+  submitting = false,
+  open = true,
+  onClose,
+  embedded = false,
+}) {
+  const isEdit = Boolean(initialData && initialData._id);
 
-// --- FIX for typing bug: Wrap component in React.memo ---
-const ProductForm = React.memo(
-  ({ initialData = null, onSubmit, loading = false, categories = [] }) => {
-    const [activeTab, setActiveTab] = useState(0);
-    const [images, setImages] = useState(initialData?.images || []);
-    // const [variants, setVariants] = useState(initialData?.variants || []); // --- REMOVED ---
-    const [tags, setTags] = useState(initialData?.tags || []);
-    const [features, setFeatures] = useState(initialData?.features || []);
-    // const [specifications, setSpecifications] = useState( ... ); // --- REMOVED ---
+  const {
+    control,
+    handleSubmit,
+    watch,
+    setValue,
+    reset,
+    formState: { errors },
+  } = useForm({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      name: initialData?.name || "",
+      description: initialData?.description || "",
+      shortDescription: initialData?.shortDescription || "",
+      category:
+        (initialData?.category &&
+          (initialData.category._id || initialData.category)) ||
+        "",
+      brand: initialData?.brand || "",
+      basePrice: initialData?.basePrice ?? 0,
+      discountPercentage:
+        initialData &&
+        initialData.basePrice &&
+        initialData.discountPrice != null
+          ? Math.round(
+              ((initialData.basePrice - initialData.discountPrice) /
+                initialData.basePrice) *
+                100
+            )
+          : "",
+      discountPrice: initialData?.discountPrice ?? initialData?.basePrice ?? 0,
+      status: initialData?.status || "draft",
+      featured: initialData?.featured || false,
+      trending: initialData?.trending || false,
+      tags: initialData?.tags || [],
+      features: initialData?.features || [],
+    },
+  });
 
-    const {
-      control,
-      handleSubmit,
-      watch,
-      setValue,
-      formState: { errors },
-    } = useForm({
-      resolver: yupResolver(productSchema),
-      defaultValues: {
+  const [images, setImages] = useState(() =>
+    (initialData?.images || []).map((img) => ({
+      id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
+      filename: img.filename,
+      url: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
+      alt: img.alt || "",
+      isPrimary: !!img.isPrimary,
+    }))
+  );
+
+  const [tagInput, setTagInput] = useState("");
+  const [featureInput, setFeatureInput] = useState("");
+  const tags = watch("tags") || [];
+  const features = watch("features") || [];
+  const basePrice = watch("basePrice");
+  const discountPerc = watch("discountPercentage");
+
+  /* recalculated discountPrice when basePrice or discountPercentage changes */
+  useEffect(() => {
+    const b = parseFloat(basePrice);
+    const p = parseFloat(discountPerc);
+    if (!isNaN(b) && typeof p === "number" && !isNaN(p)) {
+      const disc = b - (b * (p || 0)) / 100;
+      setValue(
+        "discountPrice",
+        Number.isFinite(disc) ? Number(disc.toFixed(2)) : b
+      );
+    } else {
+      setValue("discountPrice", isNaN(+b) ? 0 : Number((+b).toFixed(2)));
+    }
+  }, [basePrice, discountPerc, setValue]);
+
+  useEffect(() => {
+    if (initialData) {
+      reset({
         name: initialData?.name || "",
         description: initialData?.description || "",
         shortDescription: initialData?.shortDescription || "",
-        category: initialData?.category?._id || "",
+        category:
+          (initialData?.category &&
+            (initialData.category._id || initialData.category)) ||
+          "",
         brand: initialData?.brand || "",
-        basePrice: initialData?.basePrice || 0,
-        discountPrice: initialData?.discountPrice || 0,
-        discountPercentage: getInitialDiscountPerc(initialData), // --- ADDED ---
+        basePrice: initialData?.basePrice ?? 0,
+        discountPercentage:
+          initialData &&
+          initialData.basePrice &&
+          initialData.discountPrice != null
+            ? Math.round(
+                ((initialData.basePrice - initialData.discountPrice) /
+                  initialData.basePrice) *
+                  100
+              )
+            : "",
+        discountPrice:
+          initialData?.discountPrice ?? initialData?.basePrice ?? 0,
         status: initialData?.status || "draft",
         featured: initialData?.featured || false,
         trending: initialData?.trending || false,
-      },
-    });
+        tags: initialData?.tags || [],
+        features: initialData?.features || [],
+      });
+      setImages(
+        (initialData?.images || []).map((img) => ({
+          id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
+          filename: img.filename,
+          url: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
+          alt: img.alt || "",
+          isPrimary: !!img.isPrimary,
+        }))
+      );
+    }
+  }, [initialData, reset]);
 
-    // --- ADDED: Watch for price/discount changes ---
-    const [basePrice, discountPercentage] = watch([
-      "basePrice",
-      "discountPercentage",
-    ]);
+  const addTag = (value) => {
+    const v = (value || "").trim();
+    if (!v) return;
+    if (!tags.includes(v))
+      setValue("tags", [...tags, v], { shouldValidate: true });
+    setTagInput("");
+  };
+  const removeTag = (index) => {
+    const arr = [...tags];
+    arr.splice(index, 1);
+    setValue("tags", arr, { shouldValidate: true });
+  };
+  const addFeature = (value) => {
+    const v = (value || "").trim();
+    if (!v) return;
+    if (!features.includes(v))
+      setValue("features", [...features, v], { shouldValidate: true });
+    setFeatureInput("");
+  };
+  const removeFeature = (index) => {
+    const arr = [...features];
+    arr.splice(index, 1);
+    setValue("features", arr, { shouldValidate: true });
+  };
 
-    // --- ADDED: Calculate discount price automatically ---
-    useEffect(() => {
-      const base = parseFloat(basePrice);
-      const perc = parseFloat(discountPercentage);
-      if (!isNaN(base) && !isNaN(perc) && perc >= 0 && perc <= 100) {
-        const newDiscountPrice = base - (base * perc) / 100;
-        setValue("discountPrice", newDiscountPrice.toFixed(2), {
-          shouldValidate: true,
-        });
-      } else if (!isNaN(base) && (isNaN(perc) || perc === 0)) {
-        // If discount % is empty or 0, set price to base
-        setValue("discountPrice", base.toFixed(2), {
-          shouldValidate: true,
-        });
+  const handleImagesChange = (nextImages) => setImages(nextImages);
+
+  const onKeyDown = (e) => {
+    const tag = e.target?.tagName?.toLowerCase();
+    if (e.key === "Enter" && tag !== "textarea") e.preventDefault();
+  };
+
+  const submit = async (vals) => {
+    const fd = new FormData();
+    fd.append("name", vals.name);
+    fd.append("description", vals.description);
+    if (vals.shortDescription)
+      fd.append("shortDescription", vals.shortDescription);
+    fd.append("category", vals.category);
+    if (vals.brand) fd.append("brand", vals.brand);
+    fd.append("basePrice", String(vals.basePrice));
+    if (vals.discountPrice !== undefined && vals.discountPrice !== null)
+      fd.append("discountPrice", String(vals.discountPrice));
+    if (
+      vals.discountPercentage !== undefined &&
+      vals.discountPercentage !== null
+    )
+      fd.append("discountPercentage", String(vals.discountPercentage));
+    fd.append("status", vals.status || "draft");
+    fd.append("featured", vals.featured ? "true" : "false");
+    fd.append("trending", vals.trending ? "true" : "false");
+    fd.append("tags", JSON.stringify(vals.tags || []));
+    fd.append("features", JSON.stringify(vals.features || []));
+
+    const existingFilenames = [];
+    (images || []).forEach((img) => {
+      if (img.file) {
+        fd.append("images", img.file, img.file.name || `img-${Date.now()}`);
+      } else if (img._localFile) {
+        fd.append(
+          "images",
+          img._localFile,
+          img._localFile.name || `img-${Date.now()}`
+        );
+      } else if (img.filename) {
+        existingFilenames.push(img.filename);
       }
-    }, [basePrice, discountPercentage, setValue]);
+    });
+    if (existingFilenames.length)
+      fd.append("existingFilenames", JSON.stringify(existingFilenames));
 
-    const handleFormSubmit = (data) => {
-      const formData = {
-        ...data,
-        images,
-        // variants, // --- REMOVED ---
-        tags,
-        features,
-        // specifications, // --- REMOVED ---
-        // totalStock, // --- REMOVED ---
-      };
-      onSubmit(formData);
-    };
+    if (isEdit) fd.append("_id", initialData._id);
+    await onSubmit(fd, { isEdit, id: initialData?._id });
+  };
 
-    // --- REMOVED: specification functions (add, update, remove) ---
+  /* ---------------- inner form (no nested scroll) ---------------- */
+  const formInner = (
+    <Box sx={{ p: 3 }}>
+      <Box
+        component="form"
+        onSubmit={handleSubmit(submit)}
+        onKeyDown={onKeyDown}
+      >
+        {/* Basic Information */}
+        <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
+          <Typography sx={sectionHeaderStyles}>
+            <InfoOutlinedIcon sx={{ fontSize: 20 }} />
+            Basic Information
+          </Typography>
 
-    const TabPanel = ({ children, value, index }) => (
-      <div hidden={value !== index}>
-        {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
-      </div>
-    );
-
-    return (
-      <Paper elevation={3} sx={{ p: 3, maxHeight: "70vh", overflowY: "auto" }}>
-        <Typography variant="h5" gutterBottom>
-          {initialData ? "Edit Product" : "Create New Product"}
-        </Typography>
-
-        <form onSubmit={handleSubmit(handleFormSubmit)}>
-          <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-            <Tabs
-              value={activeTab}
-              onChange={(e, newValue) => setActiveTab(newValue)}
-            >
-              <Tab label="Basic Info" />
-              <Tab label="Images" />
-              {/* <Tab label="Variants" /> */} {/* --- REMOVED --- */}
-              <Tab label="Details" />
-              <Tab label="SEO & Settings" />
-            </Tabs>
-          </Box>
-
-          {/* Basic Information Tab */}
-          <TabPanel value={activeTab} index={0}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={8}>
-                <Controller
-                  name="name"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Product Name"
-                      error={!!errors.name}
-                      helperText={errors.name?.message}
-                      margin="normal"
-                    />
-                  )}
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Controller
+              name="name"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Product Name"
+                  fullWidth
+                  required
+                  size="small"
+                  error={!!errors.name}
+                  helperText={errors.name?.message}
+                  sx={textFieldStyles}
                 />
+              )}
+            />
 
-                <Controller
-                  name="shortDescription"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Short Description"
-                      error={!!errors.shortDescription}
-                      helperText={errors.shortDescription?.message}
-                      margin="normal"
-                      multiline
-                      rows={2}
-                    />
-                  )}
+            <Controller
+              name="category"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Category"
+                  fullWidth
+                  required
+                  size="small"
+                  error={!!errors.category}
+                  helperText={errors.category?.message}
+                  sx={textFieldStyles}
+                >
+                  <MenuItem value="">Select Category</MenuItem>
+                  {categories.map((c) => (
+                    <MenuItem key={c._id || c.id} value={c._id || c.id}>
+                      {c.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
+
+            <Controller
+              name="brand"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Brand"
+                  fullWidth
+                  size="small"
+                  sx={textFieldStyles}
                 />
+              )}
+            />
 
-                <Controller
-                  name="description"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Full Description"
-                      error={!!errors.description}
-                      helperText={errors.description?.message}
-                      margin="normal"
-                      multiline
-                      rows={4}
-                    />
-                  )}
-                />
-              </Grid>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <Controller
+                name="basePrice"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Base Price"
+                    type="number"
+                    fullWidth
+                    required
+                    size="small"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">₹</InputAdornment>
+                      ),
+                    }}
+                    error={!!errors.basePrice}
+                    helperText={errors.basePrice?.message}
+                    sx={textFieldStyles}
+                  />
+                )}
+              />
 
-              <Grid item xs={12} md={4}>
-                <Controller
-                  name="category"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl
-                      fullWidth
-                      margin="normal"
-                      error={!!errors.category}
-                    >
-                      <InputLabel>Category</InputLabel>
-                      <Select {...field} label="Category">
-                        {categories.map((cat) => (
-                          <MenuItem key={cat._id} value={cat._id}>
-                            {cat.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
-                />
+              <Controller
+                name="discountPercentage"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Discount %"
+                    type="number"
+                    fullWidth
+                    size="small"
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">%</InputAdornment>
+                      ),
+                    }}
+                    error={!!errors.discountPercentage}
+                    helperText={errors.discountPercentage?.message}
+                    sx={textFieldStyles}
+                  />
+                )}
+              />
 
-                <Controller
-                  name="brand"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Brand"
-                      margin="normal"
-                    />
-                  )}
-                />
+              <Controller
+                name="discountPrice"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Final Price"
+                    type="number"
+                    fullWidth
+                    size="small"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">₹</InputAdornment>
+                      ),
+                      readOnly: true,
+                    }}
+                    sx={textFieldStyles}
+                  />
+                )}
+              />
+            </Stack>
+          </Stack>
+        </Box>
 
-                {/* --- PRICE GRID UPDATED --- */}
-                <Grid container spacing={2}>
-                  <Grid item xs={6} md={4}>
-                    <Controller
-                      name="basePrice"
-                      control={control}
-                      render={({ field }) => (
-                        <TextField
-                          {...field}
-                          fullWidth
-                          label="Base Price"
-                          type="number"
-                          error={!!errors.basePrice}
-                          helperText={errors.basePrice?.message}
-                          margin="normal"
-                          InputProps={{
-                            startAdornment: (
-                              <Typography sx={{ mr: 1 }}>₹</Typography>
-                            ),
-                          }}
-                        />
-                      )}
-                    />
-                  </Grid>
-                  <Grid item xs={6} md={4}>
-                    <Controller
-                      name="discountPercentage"
-                      control={control}
-                      render={({ field }) => (
-                        <TextField
-                          {...field}
-                          fullWidth
-                          label="Discount %"
-                          type="number"
-                          error={!!errors.discountPercentage}
-                          helperText={errors.discountPercentage?.message}
-                          margin="normal"
-                          InputProps={{
-                            endAdornment: (
-                              <InputAdornment position="end">%</InputAdornment>
-                            ),
-                          }}
-                        />
-                      )}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Controller
-                      name="discountPrice"
-                      control={control}
-                      render={({ field }) => (
-                        <TextField
-                          {...field}
-                          fullWidth
-                          label="Discount Price"
-                          type="number"
-                          error={!!errors.discountPrice}
-                          helperText={errors.discountPrice?.message}
-                          margin="normal"
-                          InputProps={{
-                            readOnly: true, // Make it read-only
-                            startAdornment: (
-                              <Typography sx={{ mr: 1 }}>₹</Typography>
-                            ),
-                          }}
-                        />
-                      )}
-                    />
-                  </Grid>
-                </Grid>
-              </Grid>
-            </Grid>
-          </TabPanel>
+        <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
 
-          {/* Images Tab */}
-          <TabPanel value={activeTab} index={1}>
+        {/* IMAGES - single outer dashed box, same size as UserForm (minHeight 120) */}
+        <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
+          <Typography sx={sectionHeaderStyles}>
+            <ImageOutlinedIcon sx={{ fontSize: 20 }} />
+            Product Images & Preview
+          </Typography>
+          <Box
+            sx={{
+              border: "2px dashed #66BB6A",
+              borderRadius: 2,
+              backgroundColor: "#F1F8F1",
+              p: 2,
+              minHeight: "120px !important",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              "& > *": {
+                minHeight: "unset !important",
+                background: "transparent !important",
+                border: "none !important",
+                boxShadow: "none !important",
+                width: "100% !important",
+              },
+              "& .dropzone, & .dz, &[data-dropzone]": { minHeight: 120 },
+            }}
+          >
             <ImageUploadManager
               images={images}
-              onImagesChange={setImages}
-              maxImages={10}
-              folder="products"
+              onImagesChange={handleImagesChange}
+              maxImages={15}
+              noWrapper={true}
             />
-          </TabPanel>
-
-          {/* Variants Tab --- REMOVED --- */}
-
-          {/* Details Tab (Index updated to 2) */}
-          <TabPanel value={activeTab} index={2}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Typography variant="h6" gutterBottom>
-                  Tags
-                </Typography>
-                <Autocomplete
-                  multiple
-                  freeSolo
-                  options={[]}
-                  value={tags}
-                  onChange={(e, newTags) => setTags(newTags)}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        variant="outlined"
-                        label={option}
-                        {...getTagProps({ index })}
-                        key={index}
-                      />
-                    ))
-                  }
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Add tags..."
-                      helperText="Press Enter to add tags"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Box sx={{ mt: 0 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Features
-                  </Typography>
-                  <Autocomplete
-                    multiple
-                    freeSolo
-                    options={[]}
-                    value={features}
-                    onChange={(e, newFeatures) => setFeatures(newFeatures)}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip
-                          variant="outlined"
-                          label={option}
-                          {...getTagProps({ index })}
-                          key={index}
-                        />
-                      ))
-                    }
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        placeholder="Add features..."
-                        helperText="Press Enter to add features"
-                      />
-                    )}
-                  />
-                </Box>
-              </Grid>
-
-              {/* --- SPECIFICATIONS REMOVED --- */}
-            </Grid>
-          </TabPanel>
-
-          {/* SEO & Settings Tab (Index updated to 3) */}
-          <TabPanel value={activeTab} index={3}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="status"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth margin="normal">
-                      <InputLabel>Status</InputLabel>
-                      <Select {...field} label="Status">
-                        <MenuItem value="draft">Draft</MenuItem>
-                        <MenuItem value="active">Active</MenuItem>
-                        <MenuItem value="inactive">Inactive</MenuItem>
-                        <MenuItem value="archived">Archived</MenuItem>
-                      </Select>
-                    </FormControl>
-                  )}
-                />
-
-                <Box sx={{ mt: 2 }}>
-                  <Controller
-                    name="featured"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Switch {...field} checked={field.value} />}
-                        label="Featured Product"
-                      />
-                    )}
-                  />
-                </Box>
-
-                <Box>
-                  <Controller
-                    name="trending"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={<Switch {...field} checked={field.value} />}
-                        label="Trending Product"
-                      />
-                    )}
-                  />
-                </Box>
-              </Grid>
-            </Grid>
-          </TabPanel>
-
-          <Divider sx={{ my: 3 }} />
-
-          <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
-            <Button
-              type="submit"
-              variant="contained"
-              startIcon={<SaveIcon />}
-              disabled={loading}
-              size="large"
-            >
-              {loading
-                ? "Saving..."
-                : initialData
-                ? "Update Product"
-                : "Create Product"}
-            </Button>
           </Box>
-        </form>
-      </Paper>
+        </Box>
+
+        <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
+
+        {/* SPECS */}
+        <Box sx={{ ...fieldContainerStyles }}>
+          <Typography sx={sectionHeaderStyles}>
+            <SettingsOutlinedIcon sx={{ fontSize: 20 }} />
+            Specifications & Details
+          </Typography>
+
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Controller
+              name="shortDescription"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Short Description"
+                  fullWidth
+                  size="small"
+                  multiline
+                  rows={2}
+                  placeholder="Brief product description"
+                  sx={textFieldStyles}
+                />
+              )}
+            />
+            <Controller
+              name="description"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Full Description"
+                  fullWidth
+                  required
+                  size="small"
+                  multiline
+                  rows={3}
+                  error={!!errors.description}
+                  helperText={errors.description?.message}
+                  placeholder="Detailed product description"
+                  sx={textFieldStyles}
+                />
+              )}
+            />
+
+            {/* Tags */}
+            <Box>
+              <Typography
+                variant="body2"
+                sx={{ mb: 1, fontWeight: 600, color: "#2E7D32" }}
+              >
+                Tags
+              </Typography>
+              {tags.length > 0 && (
+                <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
+                  {tags.map((t, idx) => (
+                    <Chip
+                      key={t + idx}
+                      label={t}
+                      size="small"
+                      onDelete={() => removeTag(idx)}
+                      sx={{ m: 0.5 }}
+                    />
+                  ))}
+                </Stack>
+              )}
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  size="small"
+                  placeholder="Add tag and press Enter"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addTag(tagInput);
+                    }
+                  }}
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => addTag(tagInput)}
+                >
+                  Add
+                </Button>
+              </Stack>
+            </Box>
+
+            {/* Features */}
+            <Box>
+              <Typography
+                variant="body2"
+                sx={{ mb: 1, fontWeight: 600, color: "#2E7D32" }}
+              >
+                Features
+              </Typography>
+              {features.length > 0 && (
+                <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
+                  {features.map((f, idx) => (
+                    <Chip
+                      key={f + idx}
+                      label={f}
+                      size="small"
+                      onDelete={() => removeFeature(idx)}
+                      color="primary"
+                      variant="outlined"
+                      sx={{ m: 0.5 }}
+                    />
+                  ))}
+                </Stack>
+              )}
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  size="small"
+                  placeholder="Add feature and press Enter"
+                  value={featureInput}
+                  onChange={(e) => setFeatureInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addFeature(featureInput);
+                    }
+                  }}
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => addFeature(featureInput)}
+                >
+                  Add
+                </Button>
+              </Stack>
+            </Box>
+
+            <Controller
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Status"
+                  fullWidth
+                  size="small"
+                  sx={textFieldStyles}
+                >
+                  <MenuItem value="draft">Draft</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="inactive">Inactive</MenuItem>
+                </TextField>
+              )}
+            />
+
+            <Stack direction="row" spacing={2}>
+              <Controller
+                name="featured"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    control={
+                      <Switch {...field} checked={!!field.value} size="small" />
+                    }
+                    label="Featured"
+                  />
+                )}
+              />
+              <Controller
+                name="trending"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    control={
+                      <Switch {...field} checked={!!field.value} size="small" />
+                    }
+                    label="Trending"
+                  />
+                )}
+              />
+            </Stack>
+          </Stack>
+        </Box>
+      </Box>
+    </Box>
+  );
+
+  /* Actions - use DialogActions to match UserForm exactly */
+  const actions = (
+    <DialogActions sx={formActionsStyles}>
+      <Button
+        onClick={onClose || onCancel}
+        variant="outlined"
+        startIcon={<CloseIcon />}
+        sx={cancelButtonStyles}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={handleSubmit(submit)}
+        variant="contained"
+        startIcon={<SaveIcon />}
+        sx={submitButtonStyles}
+        disabled={submitting}
+      >
+        {submitting
+          ? isEdit
+            ? "Updating..."
+            : "Saving..."
+          : isEdit
+          ? "Update Product"
+          : "Create Product"}
+      </Button>
+    </DialogActions>
+  );
+
+  /* If embedded=true (rendered inside FormModal), return only inner + actions (no extra dialog title) */
+  if (embedded) {
+    return (
+      <>
+        {formInner}
+        {actions}
+      </>
     );
   }
-);
 
-export default ProductForm;
+  /* Standalone dialog (unlikely used if you place ProductForm inside FormModal) */
+  return (
+    <StyledFormDialog
+      open={open}
+      onClose={onClose || onCancel}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          bgcolor: "#fff",
+          borderRadius: 2,
+          overflow: "hidden",
+          boxShadow: "0 12px 48px rgba(76, 175, 80, 0.25)",
+        },
+      }}
+      BackdropProps={{ sx: { backgroundColor: "rgba(0,0,0,0.55)" } }}
+    >
+      {/* Header style will match UserForm since formHeaderStyles is same */}
+      <Box sx={{ ...formHeaderStyles }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ width: "100%", px: 3, py: 1.25 }}
+        >
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <Inventory2Icon sx={{ fontSize: 24, color: "#fff" }} />
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 700, fontSize: "20px", color: "#fff" }}
+            >
+              {isEdit ? "Edit Product" : "Add New Product"}
+            </Typography>
+          </Stack>
+          <IconButton onClick={onClose || onCancel} sx={{ color: "#fff" }}>
+            <CloseIcon />
+          </IconButton>
+        </Stack>
+      </Box>
+
+      <Box sx={{ p: 0, bgcolor: "#fff" }}>{formInner}</Box>
+      {actions}
+    </StyledFormDialog>
+  );
+}
+
+ProductForm.propTypes = {
+  initialData: PropTypes.object,
+  onSubmit: PropTypes.func.isRequired,
+  onCancel: PropTypes.func,
+  categories: PropTypes.array,
+  submitting: PropTypes.bool,
+  open: PropTypes.bool,
+  onClose: PropTypes.func,
+  embedded: PropTypes.bool,
+};
+
+ProductForm.defaultProps = {
+  initialData: null,
+  onCancel: () => {},
+  categories: [],
+  submitting: false,
+  open: true,
+  onClose: undefined,
+  embedded: false,
+};
