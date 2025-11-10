@@ -1,4 +1,4 @@
-// controllers/productController.js
+// backend/controllers/productController.js
 import fs from "fs";
 import path from "path";
 import Product from "../models/Product.js";
@@ -61,6 +61,8 @@ export const createProduct = asyncHandler(async (req, res) => {
 
   // images from req.files (saved by multer)
   const images = [];
+  // allow optional variantId in body to mark uploaded images for that variant
+  const variantIdForUploads = req.body.variantId || null;
   if (req.files && req.files.length) {
     for (let i = 0; i < req.files.length; i++) {
       const f = req.files[i];
@@ -70,6 +72,7 @@ export const createProduct = asyncHandler(async (req, res) => {
         alt: `${name} - image ${i + 1}`,
         isPrimary: i === 0,
         sortOrder: i,
+        variant: variantIdForUploads || null,
       });
     }
   }
@@ -162,17 +165,40 @@ export const getProducts = asyncHandler(async (req, res) => {
     Product.countDocuments(q),
   ]);
 
-  // attach primaryImage (fullUrl) for table preview
+  // If VariantMaster exists, fetch variants for all product ids and attach
+  const VariantModel =
+    mongoose.models.VariantMaster || mongoose.models.Variant || null;
+  let variantsByProduct = {};
+  if (VariantModel && items.length) {
+    const productIds = items.map((it) => it._id);
+    const allVariants = await VariantModel.find({
+      product: { $in: productIds },
+      isDeleted: false,
+    })
+      .populate("size", "sizeName value")
+      .populate("color", "colorName value")
+      .lean();
+    // group
+    for (const v of allVariants) {
+      const pid = v.product?.toString();
+      if (!variantsByProduct[pid]) variantsByProduct[pid] = [];
+      variantsByProduct[pid].push(v);
+    }
+  }
+
+  // attach primaryImage (fullUrl) for table preview + attach variants
   const rows = items.map((prod) => {
     const primary =
       (prod.images || []).find((i) => i.isPrimary) ||
       (prod.images && prod.images[0]) ||
       null;
-    return {
+    const pObj = {
       ...prod,
       primaryImage: primary ? primary.url : null,
       primaryImageFullUrl: primary ? buildFullUrl(req, primary.url) : null,
     };
+    pObj.variants = variantsByProduct[prod._id.toString()] || [];
+    return pObj;
   });
 
   res.json({
@@ -192,10 +218,29 @@ export const getProduct = asyncHandler(async (req, res) => {
     e.statusCode = 404;
     throw e;
   }
+
+  // attach fullUrl for images
   prod.images = (prod.images || []).map((img) => ({
     ...img,
     fullUrl: buildFullUrl(req, img.url),
   }));
+
+  // attach variants (if VariantMaster exists)
+  const VariantModel =
+    mongoose.models.VariantMaster || mongoose.models.Variant || null;
+  if (VariantModel) {
+    const variants = await VariantModel.find({
+      product: req.params.id,
+      isDeleted: false,
+    })
+      .populate("size", "sizeName value")
+      .populate("color", "colorName value")
+      .lean();
+    prod.variants = variants;
+  } else {
+    prod.variants = [];
+  }
+
   res.json({ success: true, data: prod });
 });
 
@@ -252,6 +297,8 @@ export const updateProduct = asyncHandler(async (req, res) => {
   // Handle new images in req.files
   if (req.files && req.files.length) {
     const startIndex = (existing.images || []).length;
+    // allow variantId from body to tag these uploaded images
+    const variantIdForUploads = req.body.variantId || update.variantId || null;
     for (let i = 0; i < req.files.length; i++) {
       const f = req.files[i];
       existing.images.push({
@@ -262,6 +309,7 @@ export const updateProduct = asyncHandler(async (req, res) => {
         }`,
         isPrimary: (existing.images || []).length === 0 && i === 0,
         sortOrder: startIndex + i,
+        variant: variantIdForUploads || null,
       });
     }
   }

@@ -8,6 +8,12 @@ const imageSchema = new mongoose.Schema({
   isPrimary: { type: Boolean, default: false },
   sortOrder: { type: Number, default: 0 },
   uploadedAt: { type: Date, default: Date.now },
+  // Link image to a specific variant (if any). Null => general image.
+  variant: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "VariantMaster",
+    default: null,
+  },
 });
 
 const productSchema = new mongoose.Schema(
@@ -27,8 +33,13 @@ const productSchema = new mongoose.Schema(
     basePrice: { type: Number, required: true, default: 0 },
     discountPrice: { type: Number },
 
-    // stock field (kept up-to-date by inventory system)
-    stock: { type: Number, default: 0 }, // used by InventoryController
+    // stock fields (kept up-to-date by inventory system)
+    stock: { type: Number, default: 0 }, // computed by inventory
+    totalStock: { type: Number, default: 0 }, // aggregate (variants or base)
+
+    // rating and reviews
+    rating: { type: Number, default: 0, min: 0, max: 5 },
+    reviewCount: { type: Number, default: 0 },
 
     // meta
     tags: { type: [String], default: [] },
