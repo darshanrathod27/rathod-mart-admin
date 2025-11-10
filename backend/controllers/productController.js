@@ -121,11 +121,24 @@ export const getProducts = asyncHandler(async (req, res) => {
     maxPrice,
     sortBy = "createdAt",
     sortOrder = "desc",
+    featured,
+    trending,
   } = req.query;
 
   const q = {};
   if (category) q.category = category;
   if (status) q.status = status;
+
+  // New: support featured and trending filters (expects "true" or "false")
+  if (typeof featured !== "undefined") {
+    if (featured === "true") q.featured = true;
+    else if (featured === "false") q.featured = false;
+  }
+  if (typeof trending !== "undefined") {
+    if (trending === "true") q.trending = true;
+    else if (trending === "false") q.trending = false;
+  }
+
   if (minPrice || maxPrice) {
     q.basePrice = {};
     if (minPrice) q.basePrice.$gte = Number(minPrice);
