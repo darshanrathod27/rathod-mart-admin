@@ -14,6 +14,8 @@ import productSizeMappingRoutes from "./routes/productSizeMappingRoutes.js";
 import productColorMappingRoutes from "./routes/productColorMappingRoutes.js";
 import variantMasterRoutes from "./routes/variantMasterRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
+// --- NEW ---
+import reviewRoutes from "./routes/reviewRoutes.js"; // 1. Nayi route file import karein
 
 dotenv.config();
 connectDB();
@@ -49,6 +51,8 @@ app.use("/api/product-size-mapping", productSizeMappingRoutes);
 app.use("/api/product-color-mapping", productColorMappingRoutes);
 app.use("/api/variant-master", variantMasterRoutes);
 app.use("/api/inventory", inventoryRoutes);
+// --- NEW ---
+app.use("/api/reviews", reviewRoutes); // 2. Nayi route ko register karein
 
 // global error handler (returns err.statusCode if set)
 app.use((err, req, res, next) => {
