@@ -20,6 +20,7 @@ import {
   Tooltip,
   Stack,
 } from "@mui/material";
+import { Rating } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
   Add,
@@ -359,6 +360,22 @@ export default function Products() {
         </Typography>
       ),
     },
+
+    // NEW: Rating column (read-only stars)
+    {
+      field: "rating",
+      headerName: "Rating",
+      width: 130,
+      renderCell: (params) => (
+        <Rating
+          value={params.row.rating || 0}
+          readOnly
+          precision={0.5}
+          size="small"
+        />
+      ),
+    },
+
     {
       field: "stock",
       headerName: "Stock",
@@ -457,7 +474,7 @@ export default function Products() {
               >
                 <MenuItem value="">All Categories</MenuItem>
                 {categories.map((c) => (
-                  <MenuItem key={c._id} value={c._id}>
+                  <MenuItem key={c._id} value={c._1}>
                     {c.name}
                   </MenuItem>
                 ))}
