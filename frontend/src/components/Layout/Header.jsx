@@ -25,7 +25,10 @@ import {
   Brightness6,
 } from "@mui/icons-material";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useAuth } from "../../hooks/useAuth";
+// Removed useAuth as requested
+import { useDispatch } from "react-redux";
+import { logout as logoutAction } from "../../store/authSlice";
+import api from "../../services/api";
 import toast from "react-hot-toast";
 
 const Header = ({
@@ -39,7 +42,8 @@ const Header = ({
   const [anchorEl, setAnchorEl] = useState(null);
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
-  const { logout } = useAuth();
+
+  const dispatch = useDispatch();
   const navigate = useNavigate();
   const theme = useTheme();
   const { scrollY } = useScroll();
@@ -86,11 +90,18 @@ const Header = ({
     setAnchorEl(null);
   };
 
-  const handleLogout = () => {
-    logout();
-    toast.success("Logged out successfully!");
-    navigate("/login");
+  // Updated logout: call backend, dispatch redux action, toast, navigate
+  const handleLogout = async () => {
     handleClose();
+    try {
+      await api.post("/users/logout"); // backend logout endpoint
+      dispatch(logoutAction()); // update redux auth state
+      toast.success("Logged out successfully!");
+      navigate("/login");
+    } catch (err) {
+      console.error("Logout error:", err);
+      toast.error("Logout failed");
+    }
   };
 
   return (
@@ -295,25 +306,6 @@ const Header = ({
               transition={{ duration: 0.6, delay: 0.2, type: "spring" }}
               style={{ display: "flex", alignItems: "center", gap: 4 }}
             >
-              {/* Search Icon */}
-              {/* <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                <Tooltip title="Search">
-                  <IconButton
-                    color="inherit"
-                    sx={{
-                      background: "rgba(76, 175, 80, 0.1)",
-                      "&:hover": {
-                        background: "rgba(76, 175, 80, 0.2)",
-                        transform: "translateY(-2px)",
-                      },
-                      transition: "all 0.3s ease",
-                    }}
-                  >
-                    <Search />
-                  </IconButton>
-                </Tooltip>
-              </motion.div> */}
-
               {/* Theme Toggle */}
               <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
                 <Tooltip title="Toggle Theme">

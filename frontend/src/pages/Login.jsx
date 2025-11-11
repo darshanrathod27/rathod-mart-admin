@@ -1,4 +1,4 @@
-// src/pages/Login.jsx
+// frontend/src/pages/Login.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -21,7 +21,10 @@ import {
   Lock,
   ShoppingBag,
 } from "@mui/icons-material";
-import { useAuth } from "../hooks/useAuth";
+// import { useAuth } from "../hooks/useAuth"; // 1. REMOVE
+import { useDispatch } from "react-redux"; // 2. ADD
+import { setCredentials } from "../store/authSlice"; // 3. ADD
+import api from "../services/api"; // 4. ADD
 import toast from "react-hot-toast";
 
 const Login = () => {
@@ -29,23 +32,36 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  // const { login } = useAuth(); // 5. REMOVE
   const navigate = useNavigate();
+  const dispatch = useDispatch(); // 6. ADD
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    // Simulate loading for better UX
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      // 7. REPLACE useAuth logic with API call
+      const res = await api.post("/users/login", {
+        email: formData.userId, // Assuming userId is the email
+        password: formData.password,
+      });
 
-    if (login(formData.userId, formData.password)) {
-      toast.success("Welcome to Rathod Mart Admin!");
-      navigate("/");
-    } else {
-      setError("Invalid credentials. Use ID: 123, Password: 123");
-      toast.error("Invalid credentials!");
+      // 8. Check if user is an admin or manager
+      if (res.data.role === "admin" || res.data.role === "manager") {
+        dispatch(setCredentials(res.data)); // 9. Dispatch user info to Redux
+        toast.success("Welcome back, Admin!");
+        navigate("/");
+      } else {
+        setError("Access Denied. You are not an Admin or Manager.");
+        toast.error("Access Denied.");
+      }
+    } catch (err) {
+      // 10. Handle errors from the API
+      const msg = err.response?.data?.message || err.message || "Login failed.";
+      setError(msg);
+      toast.error(msg);
     }
     setLoading(false);
   };
@@ -58,6 +74,7 @@ const Login = () => {
     if (error) setError("");
   };
 
+  // ... (rest of the JSX is identical)
   return (
     <Box
       sx={{
@@ -70,7 +87,7 @@ const Login = () => {
         padding: 2,
       }}
     >
-      {/* Animated Background Elements */}
+      {/* ... (Animated Background) ... */}
       <Box
         sx={{
           position: "absolute",
@@ -178,9 +195,9 @@ const Login = () => {
                     required
                     fullWidth
                     id="userId"
-                    label="User ID"
+                    label="Email Address" // Changed label
                     name="userId"
-                    autoComplete="username"
+                    autoComplete="email" // Changed autocomplete
                     autoFocus
                     value={formData.userId}
                     onChange={handleChange}
@@ -259,18 +276,6 @@ const Login = () => {
                   >
                     {loading ? "Signing In..." : "Sign In"}
                   </Button>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.8, duration: 0.5 }}
-                  style={{ textAlign: "center" }}
-                >
-                  {/* <Typography variant="body2" color="text.secondary">
-                    Demo Credentials: ID: <strong>123</strong> | Password:{" "}
-                    <strong>123</strong>
-                  </Typography> */}
                 </motion.div>
               </Box>
             </CardContent>
