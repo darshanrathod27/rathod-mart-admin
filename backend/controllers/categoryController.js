@@ -1,18 +1,37 @@
-// controllers/categoryController.js
+// backend/controllers/categoryController.js
 import Category from "../models/Category.js";
+import Product from "../models/Product.js";
 import asyncHandler from "../utils/asyncHandler.js";
+
+/**
+ * Helper: Update product count for a category
+ * Counts only active products (status: 'active')
+ */
+export const updateCategoryProductCount = async (categoryId) => {
+  if (!categoryId) return;
+  try {
+    const count = await Product.countDocuments({
+      category: categoryId,
+      status: "active",
+    });
+    await Category.findByIdAndUpdate(categoryId, { productsCount: count });
+    console.log(`Updated productsCount for category ${categoryId} => ${count}`);
+  } catch (err) {
+    console.error(`Failed to update count for category ${categoryId}:`, err);
+  }
+};
 
 /** Auto icon & color based on name */
 const getAutoIcon = (name = "") => {
-  const n = name.toLowerCase();
+  const n = String(name).toLowerCase();
   if (n.includes("grocery")) return "🛒";
+  if (n.includes("dairy")) return "🥛";
+  if (n.includes("electronics")) return "⚡";
+  if (n.includes("vegetable") || n.includes("vegetables")) return "🥕";
   if (n.includes("bakery") || n.includes("bread")) return "🍞";
   if (n.includes("fruit") || n.includes("apple")) return "🍎";
-  if (n.includes("vegetable") || n.includes("veggie")) return "🥕";
   if (n.includes("beverage") || n.includes("drink") || n.includes("juice"))
     return "🥤";
-  if (n.includes("dairy") || n.includes("milk") || n.includes("cheese"))
-    return "🥛";
   if (n.includes("meat") || n.includes("chicken") || n.includes("fish"))
     return "🍖";
   if (n.includes("snack") || n.includes("chips")) return "🍿";
@@ -26,7 +45,7 @@ const getAutoIcon = (name = "") => {
 };
 
 const getAutoColor = (name = "") => {
-  const n = name.toLowerCase();
+  const n = String(name).toLowerCase();
   if (n.includes("fruit") || n.includes("organic")) return "#4CAF50";
   if (n.includes("bakery") || n.includes("bread")) return "#FF9800";
   if (n.includes("beverage") || n.includes("drink")) return "#2196F3";
@@ -50,10 +69,11 @@ export const getCategories = asyncHandler(async (req, res) => {
     dateTo,
   } = req.query;
 
-  const p = Math.max(parseInt(page) || 1, 1);
-  const l = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
+  const p = Math.max(parseInt(page, 10) || 1, 1);
+  const l = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
 
   const filter = { isDeleted: false };
+
   if (search) {
     filter.$or = [
       { $text: { $search: search } },
@@ -61,7 +81,9 @@ export const getCategories = asyncHandler(async (req, res) => {
       { description: { $regex: search, $options: "i" } },
     ];
   }
+
   if (status) filter.status = status;
+
   if (dateFrom || dateTo) {
     filter.createdAt = {};
     if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
@@ -82,7 +104,8 @@ export const getCategories = asyncHandler(async (req, res) => {
     Category.find(filter)
       .sort({ [key]: dir })
       .skip((p - 1) * l)
-      .limit(l),
+      .limit(l)
+      .lean(),
     Category.countDocuments(filter),
   ]);
 
@@ -106,13 +129,20 @@ export const getCategory = asyncHandler(async (req, res) => {
 
 // ------ Create ------
 export const createCategory = asyncHandler(async (req, res) => {
-  const { name, description, status = "Active" } = req.body;
+  const { name, description = "", status = "Active" } = req.body;
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    const e = new Error("Category name is required");
+    e.statusCode = 400;
+    throw e;
+  }
 
   // unique (case-insensitive) among non-deleted
   const exists = await Category.findOne({
     name: { $regex: new RegExp(`^${name}$`, "i") },
     isDeleted: false,
   });
+
   if (exists) {
     const e = new Error("Category with this name already exists");
     e.statusCode = 409;
@@ -125,6 +155,11 @@ export const createCategory = asyncHandler(async (req, res) => {
     status,
     icon: getAutoIcon(name),
     color: getAutoColor(name),
+    productsCount: 0,
+    slug: name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, ""),
   });
 
   res.status(201).json({ success: true, data: cat });
@@ -142,7 +177,7 @@ export const updateCategory = asyncHandler(async (req, res) => {
     throw e;
   }
 
-  // name change → unique check + new icon/color + new slug (controller-level)
+  // name change → unique check + new icon/color + new slug
   if (update.name && update.name !== current.name) {
     const exists = await Category.findOne({
       name: { $regex: new RegExp(`^${update.name}$`, "i") },
@@ -166,6 +201,7 @@ export const updateCategory = asyncHandler(async (req, res) => {
     new: true,
     runValidators: true,
   });
+
   res.json({ success: true, data: cat });
 });
 
@@ -177,9 +213,42 @@ export const deleteCategory = asyncHandler(async (req, res) => {
     e.statusCode = 404;
     throw e;
   }
+
   await Category.findByIdAndUpdate(req.params.id, {
     isDeleted: true,
     deletedAt: new Date(),
   });
+
+  // update product count for this category (now should be zero or reflect remaining)
+  try {
+    await updateCategoryProductCount(req.params.id);
+  } catch (err) {
+    console.warn("Failed to update category count after delete:", err);
+  }
+
   res.json({ success: true, message: "Category deleted" });
+});
+
+/**
+ * @desc    Recalculate product counts for all categories
+ * @route   GET /api/categories/admin/recount-all
+ * @access  Admin
+ */
+export const recountAllCategories = asyncHandler(async (req, res) => {
+  try {
+    const categories = await Category.find({ isDeleted: false }).select("_id");
+    let count = 0;
+    for (const cat of categories) {
+      await updateCategoryProductCount(cat._id);
+      count++;
+    }
+
+    res.json({
+      success: true,
+      message: `Recalculated counts for ${count} categories.`,
+    });
+  } catch (err) {
+    console.error("Recount error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });

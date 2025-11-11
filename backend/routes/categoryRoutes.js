@@ -1,17 +1,23 @@
-// routes/categoryRoutes.js
+// backend/routes/categoryRoutes.js
 import express from "express";
 import { body, param, validationResult } from "express-validator";
+
+// Auth middlewares for protected/admin routes
+import { protect, admin } from "../middleware/authMiddleware.js";
+
+// Controller functions (including the recountAllCategories admin helper)
 import {
   getCategories,
   getCategory,
   createCategory,
   updateCategory,
   deleteCategory,
+  recountAllCategories,
 } from "../controllers/categoryController.js";
 
 const router = express.Router();
 
-// tiny validator
+// tiny validator middleware
 const validate = (req, res, next) => {
   const result = validationResult(req);
   if (result.isEmpty()) return next();
@@ -21,7 +27,7 @@ const validate = (req, res, next) => {
   next(err);
 };
 
-// rules
+// Validation rules
 const createRules = [
   body("name")
     .trim()
@@ -43,13 +49,21 @@ const updateRules = [
   body("status").optional().isIn(["Active", "Inactive"]),
 ];
 
-// list/search/paginate/sort/filter
+// Public list/search/paginate/sort/filter
 router.get("/", getCategories);
 
-// create
+// Admin-only: recount all category product counts (repair/fix route)
+router.get(
+  "/admin/recount-all",
+  protect, // user must be authenticated
+  admin, // user must be admin
+  recountAllCategories
+);
+
+// Create
 router.post("/", createRules, validate, createCategory);
 
-// read
+// Read single
 router.get(
   "/:id",
   [param("id").isMongoId().withMessage("Invalid category id")],
@@ -57,10 +71,10 @@ router.get(
   getCategory
 );
 
-// update
+// Update
 router.put("/:id", updateRules, validate, updateCategory);
 
-// delete (soft)
+// Delete (soft)
 router.delete(
   "/:id",
   [param("id").isMongoId().withMessage("Invalid category id")],
