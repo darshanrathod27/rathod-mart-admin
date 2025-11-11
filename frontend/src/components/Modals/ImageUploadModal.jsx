@@ -17,6 +17,11 @@ import {
   Paper,
   alpha,
   Stack,
+  // --- NEW ---
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import {
   CloudUpload,
@@ -27,6 +32,8 @@ import {
   Close,
 } from "@mui/icons-material";
 import { productService } from "../../services/productService";
+// --- NEW ---
+import { inventoryService } from "../../services/inventoryService";
 import toast from "react-hot-toast";
 import ReactCrop from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
@@ -188,23 +195,37 @@ export default function ImageUploadModal({
 
   const [reCrop, setReCrop] = useState(null);
 
-  const fetchImages = useCallback(async () => {
+  // --- NEW ---
+  const [variants, setVariants] = useState([]);
+  const [selectedVariant, setSelectedVariant] = useState("");
+  // --- END NEW ---
+
+  const fetchImagesAndVariants = useCallback(async () => {
     if (!product?._id) return;
     setLoading(true);
     try {
-      const imgs = await productService.getProductImages(product._id);
+      // --- MODIFIED (Fetch images and variants together) ---
+      const [imgs, vRes] = await Promise.all([
+        productService.getProductImages(product._id),
+        inventoryService.getProductVariants(product._id),
+      ]);
+
       setImages(imgs || []);
+      setVariants(vRes.data || vRes || []);
+      // --- END MODIFIED ---
     } catch (e) {
-      console.error("Fetch images error:", e);
-      toast.error("Failed to load images");
+      console.error("Fetch data error:", e);
+      toast.error("Failed to load images or variants");
     } finally {
       setLoading(false);
     }
   }, [product]);
 
   useEffect(() => {
-    if (open) fetchImages();
-  }, [open, fetchImages]);
+    if (open) {
+      fetchImagesAndVariants();
+    }
+  }, [open, fetchImagesAndVariants]);
 
   const onInputChange = (e) => {
     const file = e.target.files?.[0];
@@ -227,11 +248,19 @@ export default function ImageUploadModal({
       );
       const fd = new FormData();
       fd.append("images", file);
+      // --- NEW (Attach variant id if selected) ---
+      // (Aapka backend productController.js isko 'variantIdForUploads' mein read karega)
+      if (selectedVariant) {
+        fd.append("variantId", selectedVariant);
+      }
+      // --- END NEW ---
+
+      // Yeh service productController.js ke updateProduct ko call karegi
       await productService.uploadMultipleProductImages(product._id, fd);
       toast.success("Image uploaded");
       setPendingSrc(null);
       setPendingFile(null);
-      await fetchImages();
+      await fetchImagesAndVariants(); // Refresh data
       onUploadSuccess?.();
     } catch (e) {
       console.error("Upload error:", e);
@@ -247,7 +276,7 @@ export default function ImageUploadModal({
       const filename = img.filename || img._id;
       await productService.deleteProductImage(product._id, filename);
       toast.success("Image deleted");
-      await fetchImages();
+      await fetchImagesAndVariants(); // Refresh data
       onUploadSuccess?.();
     } catch (err) {
       console.error("Delete error:", err);
@@ -260,7 +289,7 @@ export default function ImageUploadModal({
       const filename = img.filename || img._id;
       await productService.setPrimaryImage(product._id, filename);
       toast.success("Primary image updated");
-      await fetchImages();
+      await fetchImagesAndVariants(); // Refresh data
       onUploadSuccess?.();
     } catch (err) {
       console.error("Set primary error:", err);
@@ -285,6 +314,13 @@ export default function ImageUploadModal({
       });
       const fd = new FormData();
       fd.append("images", file);
+
+      // --- NEW (Attach variant id if selected) ---
+      if (selectedVariant) {
+        fd.append("variantId", selectedVariant);
+      }
+      // --- END NEW ---
+
       await productService.uploadMultipleProductImages(product._id, fd);
 
       try {
@@ -295,7 +331,7 @@ export default function ImageUploadModal({
       } catch {}
 
       toast.success("Image updated");
-      await fetchImages();
+      await fetchImagesAndVariants(); // Refresh data
       onUploadSuccess?.();
     } catch (e) {
       console.error("Re-crop error:", e);
@@ -349,6 +385,29 @@ export default function ImageUploadModal({
 
         <DialogContent sx={{ minHeight: 300 }}>
           {(uploading || loading) && <LinearProgress sx={{ mb: 2 }} />}
+
+          {/* --- NEW (Variant selector) --- */}
+          {variants && variants.length > 0 && (
+            <FormControl fullWidth sx={{ mb: 2 }} size="small">
+              <InputLabel>Assign new images to (Optional)</InputLabel>
+              <Select
+                value={selectedVariant}
+                label="Assign new images to (Optional)"
+                onChange={(e) => setSelectedVariant(e.target.value)}
+              >
+                <MenuItem value="">
+                  <em>General Images (No Variant)</em>
+                </MenuItem>
+                {variants.map((v) => (
+                  <MenuItem key={v._id} value={v._id}>
+                    {v.color?.colorName ? `${v.color.colorName} ` : ""}
+                    {v.size?.sizeName ? ` / ${v.size.sizeName}` : ""}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          {/* --- END NEW --- */}
 
           {images.length === 0 && !loading ? (
             <Paper
@@ -413,6 +472,27 @@ export default function ImageUploadModal({
                           Primary
                         </Box>
                       )}
+                      {/* --- NEW (Display Variant Tag on Image) --- */}
+                      {img.variant && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: 6,
+                            right: 6,
+                            zIndex: 1,
+                            bgcolor: "info.main",
+                            color: "white",
+                            px: 1,
+                            py: 0.25,
+                            borderRadius: 0.5,
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          Variant
+                        </Box>
+                      )}
+                      {/* --- END NEW --- */}
                       <CardMedia
                         component="img"
                         height="140"

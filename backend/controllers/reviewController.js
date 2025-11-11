@@ -71,18 +71,17 @@ export const createReview = asyncHandler(async (req, res) => {
     comment,
     userName: userName || "Guest", // Guest fallback
     // user: userId,
-    status: "Pending", // Default status, admin ko approve karna padega
+    // --- MODIFIED --- (Auto-approve reviews for now)
+    status: "Approved", // Default status, admin ko approve karna padega
   });
 
-  // Note: Hum product rating yahan update NAHIN karenge.
-  // Hum tab update karenge jab review 'Approved' hoga.
-  // Agar aapko pending review bhi dikhana hai, toh updateProductRating yahan call karein
-  // aur status filter hata dein.
-  // For now, hum ise admin approval par rakhte hain.
+  // --- NEW ---
+  // Review create hote hi product rating update karein
+  await updateProductRating(productId);
 
   res.status(201).json({
     success: true,
-    message: "Review submitted. Waiting for approval.",
+    message: "Review submitted successfully.",
     data: review,
   });
 });
