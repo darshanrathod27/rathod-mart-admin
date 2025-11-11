@@ -6,11 +6,14 @@ import Category from "../models/Category.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import mongoose from "mongoose";
 
+// Import the category count updater (exported from categoryController.js)
+import { updateCategoryProductCount } from "./categoryController.js";
+
 /* Helper: build public URL for a relative path */
 const buildFullUrl = (req, relPath) => {
   if (!relPath) return null;
-  // relPath expected like: /uploads/products/filename.jpg
-  return `${req.protocol}://${req.get("host")}${relPath}`;
+  const p = relPath.startsWith("/") ? relPath : `/${relPath}`;
+  return `${req.protocol}://${req.get("host")}${p}`;
 };
 
 const UPLOAD_FOLDER = "/uploads/products"; // relative url prefix
@@ -29,7 +32,7 @@ const removeFile = async (filename) => {
   }
 };
 
-/* Create Product */
+/* -------------------- Create Product -------------------- */
 export const createProduct = asyncHandler(async (req, res) => {
   const {
     name,
@@ -61,7 +64,6 @@ export const createProduct = asyncHandler(async (req, res) => {
 
   // images from req.files (saved by multer)
   const images = [];
-  // allow optional variantId in body to mark uploaded images for that variant
   const variantIdForUploads = req.body.variantId || null;
   if (req.files && req.files.length) {
     for (let i = 0; i < req.files.length; i++) {
@@ -103,6 +105,18 @@ export const createProduct = asyncHandler(async (req, res) => {
 
   const saved = await product.save();
   await saved.populate("category", "name slug");
+
+  // Update category product count (category now has one more product)
+  try {
+    if (saved.category) {
+      await updateCategoryProductCount(
+        saved.category._id ? saved.category._id : saved.category
+      );
+    }
+  } catch (err) {
+    console.warn("updateCategoryProductCount failed after create:", err);
+  }
+
   const result = saved.toObject();
   result.images = (result.images || []).map((img) => ({
     ...img,
@@ -112,7 +126,7 @@ export const createProduct = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: result });
 });
 
-/* List with pagination/filter/search/sort */
+/* -------------------- List with pagination/filter/search/sort -------------------- */
 export const getProducts = asyncHandler(async (req, res) => {
   const {
     page = 1,
@@ -128,11 +142,11 @@ export const getProducts = asyncHandler(async (req, res) => {
     trending,
   } = req.query;
 
-  const q = {};
+  const q = { isDeleted: { $ne: true } };
   if (category) q.category = category;
   if (status) q.status = status;
 
-  // New: support featured and trending filters (expects "true" or "false")
+  // support featured and trending filters (expects "true" or "false")
   if (typeof featured !== "undefined") {
     if (featured === "true") q.featured = true;
     else if (featured === "false") q.featured = false;
@@ -178,7 +192,7 @@ export const getProducts = asyncHandler(async (req, res) => {
       .populate("size", "sizeName value")
       .populate("color", "colorName value")
       .lean();
-    // group
+    // group by product id
     for (const v of allVariants) {
       const pid = v.product?.toString();
       if (!variantsByProduct[pid]) variantsByProduct[pid] = [];
@@ -208,7 +222,7 @@ export const getProducts = asyncHandler(async (req, res) => {
   });
 });
 
-/* Get single product */
+/* -------------------- Get single product -------------------- */
 export const getProduct = asyncHandler(async (req, res) => {
   const prod = await Product.findById(req.params.id)
     .populate("category", "name slug")
@@ -244,7 +258,7 @@ export const getProduct = asyncHandler(async (req, res) => {
   res.json({ success: true, data: prod });
 });
 
-/* Update Product (supports adding images via req.files, and deleteFilenames array in body) */
+/* -------------------- Update Product -------------------- */
 export const updateProduct = asyncHandler(async (req, res) => {
   const id = req.params.id;
   const existing = await Product.findById(id);
@@ -253,6 +267,9 @@ export const updateProduct = asyncHandler(async (req, res) => {
     e.statusCode = 404;
     throw e;
   }
+
+  // Store old category ID to update counts later if changed
+  const oldCategoryId = existing.category ? existing.category.toString() : null;
 
   const update = { ...req.body };
 
@@ -289,7 +306,6 @@ export const updateProduct = asyncHandler(async (req, res) => {
         );
       }
     } catch (e) {
-      // ignore parse errors but log
       console.warn("deleteFilenames parse error", e);
     }
   }
@@ -297,7 +313,6 @@ export const updateProduct = asyncHandler(async (req, res) => {
   // Handle new images in req.files
   if (req.files && req.files.length) {
     const startIndex = (existing.images || []).length;
-    // allow variantId from body to tag these uploaded images
     const variantIdForUploads = req.body.variantId || update.variantId || null;
     for (let i = 0; i < req.files.length; i++) {
       const f = req.files[i];
@@ -341,6 +356,22 @@ export const updateProduct = asyncHandler(async (req, res) => {
 
   await existing.save();
   await existing.populate("category", "name slug");
+
+  // Update counts for new and old categories (if changed)
+  try {
+    const newCategoryId = existing.category
+      ? (existing.category._id || existing.category).toString()
+      : null;
+    if (newCategoryId) {
+      await updateCategoryProductCount(newCategoryId);
+    }
+    if (oldCategoryId && oldCategoryId !== newCategoryId) {
+      await updateCategoryProductCount(oldCategoryId);
+    }
+  } catch (err) {
+    console.warn("updateCategoryProductCount failed after update:", err);
+  }
+
   const out = existing.toObject();
   out.images = (out.images || []).map((img) => ({
     ...img,
@@ -350,7 +381,7 @@ export const updateProduct = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Updated", data: out });
 });
 
-/* Delete product (also delete images from disk) */
+/* -------------------- Delete product -------------------- */
 export const deleteProduct = asyncHandler(async (req, res) => {
   const p = await Product.findById(req.params.id);
   if (!p) {
@@ -359,16 +390,27 @@ export const deleteProduct = asyncHandler(async (req, res) => {
     throw e;
   }
 
-  // delete files
+  // store category id for count update
+  const categoryId = p.category ? p.category.toString() : null;
+
+  // delete files from disk
   for (const img of p.images || []) {
     if (img.filename) await removeFile(img.filename);
   }
 
   await Product.findByIdAndDelete(req.params.id);
+
+  // Update category count (product removed)
+  try {
+    if (categoryId) await updateCategoryProductCount(categoryId);
+  } catch (err) {
+    console.warn("updateCategoryProductCount failed after delete:", err);
+  }
+
   res.json({ success: true, message: "Product deleted" });
 });
 
-/* Reorder images (body.imageFilenames = [filename1, filename2, ...]) */
+/* -------------------- Reorder images -------------------- */
 export const reorderImages = asyncHandler(async (req, res) => {
   const { imageFilenames } = req.body;
   const product = await Product.findById(req.params.id);
@@ -401,7 +443,7 @@ export const reorderImages = asyncHandler(async (req, res) => {
   });
 });
 
-/* Set primary image (body.filename = "abc.jpg") */
+/* -------------------- Set primary image -------------------- */
 export const setPrimaryImage = asyncHandler(async (req, res) => {
   const { filename } = req.body;
   const product = await Product.findById(req.params.id);
@@ -426,7 +468,7 @@ export const setPrimaryImage = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Primary updated" });
 });
 
-/* Get product variants (optional) - returns [] if no Variant model */
+/* -------------------- Get product variants -------------------- */
 export const getProductVariants = asyncHandler(async (req, res) => {
   const productId = req.params.id;
   const VariantModel =
@@ -438,9 +480,7 @@ export const getProductVariants = asyncHandler(async (req, res) => {
   res.json({ success: true, data: variants });
 });
 
-/* Recalculate totalStock for product from Variant / Inventory models if present
-   This is a helper endpoint to keep product.totalStock consistent with variant/inventory changes.
-*/
+/* -------------------- Recalculate totalStock -------------------- */
 export const recalculateStock = asyncHandler(async (req, res) => {
   const productId = req.params.id;
   const product = await Product.findById(productId);
@@ -450,21 +490,18 @@ export const recalculateStock = asyncHandler(async (req, res) => {
     throw e;
   }
 
-  // Prefer VariantMaster model -> fallback to Inventory model
   const VariantModel =
     mongoose.models.VariantMaster || mongoose.models.Variant || null;
   let total = 0;
 
   if (VariantModel) {
     const variants = await VariantModel.find({ product: productId }).lean();
-    // Assume variants have `stock` field (number)
     for (const v of variants) {
       if (typeof v.stock === "number") total += v.stock;
       else if (v.quantity && typeof v.quantity === "number")
         total += v.quantity;
     }
   } else {
-    // try Inventory model
     const InventoryModel = mongoose.models.Inventory || null;
     if (InventoryModel) {
       const inventories = await InventoryModel.find({
