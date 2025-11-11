@@ -17,7 +17,6 @@ import {
   Paper,
   alpha,
   Stack,
-  // --- NEW ---
   FormControl,
   InputLabel,
   Select,
@@ -32,11 +31,13 @@ import {
   Close,
 } from "@mui/icons-material";
 import { productService } from "../../services/productService";
-// --- NEW ---
 import { inventoryService } from "../../services/inventoryService";
 import toast from "react-hot-toast";
 import ReactCrop from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
+// --- NEW ---
+import { useDropzone } from "react-dropzone";
+// --- END NEW ---
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -195,16 +196,39 @@ export default function ImageUploadModal({
 
   const [reCrop, setReCrop] = useState(null);
 
-  // --- NEW ---
   const [variants, setVariants] = useState([]);
   const [selectedVariant, setSelectedVariant] = useState("");
+
+  // --- NEW (Dropzone Logic) ---
+  const onDrop = useCallback((acceptedFiles) => {
+    // This modal's flow is one-file-at-a-time for cropping
+    const file = acceptedFiles?.[0];
+    if (!file) return;
+    setPendingFile(file);
+    const src = URL.createObjectURL(file);
+    setPendingSrc(src);
+    setShowCrop(true); // Trigger crop dialog
+  }, []);
+
+  const {
+    getRootProps,
+    getInputProps,
+    isDragActive,
+    open: openFileDialog,
+  } = useDropzone({
+    onDrop,
+    accept: { "image/*": [] },
+    maxFiles: 1,
+    multiple: false,
+    noClick: true, // We disable click on the content area
+    noKeyboard: true, // We disable keyboard activation
+  });
   // --- END NEW ---
 
   const fetchImagesAndVariants = useCallback(async () => {
     if (!product?._id) return;
     setLoading(true);
     try {
-      // --- MODIFIED (Fetch images and variants together) ---
       const [imgs, vRes] = await Promise.all([
         productService.getProductImages(product._id),
         inventoryService.getProductVariants(product._id),
@@ -212,7 +236,6 @@ export default function ImageUploadModal({
 
       setImages(imgs || []);
       setVariants(vRes.data || vRes || []);
-      // --- END MODIFIED ---
     } catch (e) {
       console.error("Fetch data error:", e);
       toast.error("Failed to load images or variants");
@@ -227,15 +250,8 @@ export default function ImageUploadModal({
     }
   }, [open, fetchImagesAndVariants]);
 
-  const onInputChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPendingFile(file);
-    const src = URL.createObjectURL(file);
-    setPendingSrc(src);
-    setShowCrop(true);
-    e.target.value = "";
-  };
+  // This function is no longer used, onDrop replaces it
+  // const onInputChange = (e) => { ... };
 
   const applyNewCropAndUpload = async (blob) => {
     setShowCrop(false);
@@ -248,19 +264,15 @@ export default function ImageUploadModal({
       );
       const fd = new FormData();
       fd.append("images", file);
-      // --- NEW (Attach variant id if selected) ---
-      // (Aapka backend productController.js isko 'variantIdForUploads' mein read karega)
       if (selectedVariant) {
         fd.append("variantId", selectedVariant);
       }
-      // --- END NEW ---
 
-      // Yeh service productController.js ke updateProduct ko call karegi
       await productService.uploadMultipleProductImages(product._id, fd);
       toast.success("Image uploaded");
       setPendingSrc(null);
       setPendingFile(null);
-      await fetchImagesAndVariants(); // Refresh data
+      await fetchImagesAndVariants();
       onUploadSuccess?.();
     } catch (e) {
       console.error("Upload error:", e);
@@ -276,7 +288,7 @@ export default function ImageUploadModal({
       const filename = img.filename || img._id;
       await productService.deleteProductImage(product._id, filename);
       toast.success("Image deleted");
-      await fetchImagesAndVariants(); // Refresh data
+      await fetchImagesAndVariants();
       onUploadSuccess?.();
     } catch (err) {
       console.error("Delete error:", err);
@@ -289,7 +301,7 @@ export default function ImageUploadModal({
       const filename = img.filename || img._id;
       await productService.setPrimaryImage(product._id, filename);
       toast.success("Primary image updated");
-      await fetchImagesAndVariants(); // Refresh data
+      await fetchImagesAndVariants();
       onUploadSuccess?.();
     } catch (err) {
       console.error("Set primary error:", err);
@@ -315,11 +327,9 @@ export default function ImageUploadModal({
       const fd = new FormData();
       fd.append("images", file);
 
-      // --- NEW (Attach variant id if selected) ---
       if (selectedVariant) {
         fd.append("variantId", selectedVariant);
       }
-      // --- END NEW ---
 
       await productService.uploadMultipleProductImages(product._id, fd);
 
@@ -331,7 +341,7 @@ export default function ImageUploadModal({
       } catch {}
 
       toast.success("Image updated");
-      await fetchImagesAndVariants(); // Refresh data
+      await fetchImagesAndVariants();
       onUploadSuccess?.();
     } catch (e) {
       console.error("Re-crop error:", e);
@@ -359,23 +369,19 @@ export default function ImageUploadModal({
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} alignItems="center">
-              <label htmlFor="prod-img-input">
-                <input
-                  id="prod-img-input"
-                  type="file"
-                  accept="image/*"
-                  onChange={onInputChange}
-                  style={{ display: "none" }}
-                />
-                <Button
-                  component="span"
-                  variant="contained"
-                  startIcon={<CloudUpload />}
-                  size="small"
-                >
-                  Upload
-                </Button>
-              </label>
+              {/* --- MODIFICATION (Button now triggers dropzone 'open') --- */}
+              {/* <label htmlFor="prod-img-input"> ... </label> (REMOVED) */}
+              {/* <input id="prod-img-input" ... /> (REMOVED) */}
+              <Button
+                component="span"
+                variant="contained"
+                startIcon={<CloudUpload />}
+                size="small"
+                onClick={openFileDialog} // <-- This opens the file dialog
+              >
+                Upload
+              </Button>
+              {/* --- END MODIFICATION --- */}
               <IconButton size="small" onClick={onClose}>
                 <Close />
               </IconButton>
@@ -383,10 +389,16 @@ export default function ImageUploadModal({
           </Stack>
         </DialogTitle>
 
-        <DialogContent sx={{ minHeight: 300 }}>
+        {/* --- MODIFICATION (Content is now the dropzone) --- */}
+        <DialogContent
+          sx={{ minHeight: 300, outline: "none" }}
+          {...getRootProps()}
+        >
+          <input {...getInputProps()} />
+          {/* --- END MODIFICATION --- */}
+
           {(uploading || loading) && <LinearProgress sx={{ mb: 2 }} />}
 
-          {/* --- NEW (Variant selector) --- */}
           {variants && variants.length > 0 && (
             <FormControl fullWidth sx={{ mb: 2 }} size="small">
               <InputLabel>Assign new images to (Optional)</InputLabel>
@@ -407,32 +419,55 @@ export default function ImageUploadModal({
               </Select>
             </FormControl>
           )}
-          {/* --- END NEW --- */}
 
-          {images.length === 0 && !loading ? (
+          {/* --- MODIFICATION (Show drop UI) --- */}
+          {isDragActive && (
             <Paper
               sx={{
                 p: 6,
                 border: "2px dashed",
-                borderColor: "grey.300",
+                borderColor: "primary.main",
                 textAlign: "center",
-                bgcolor: alpha("#f5f5f5", 0.3),
+                bgcolor: alpha("#E8F5E9", 0.7),
               }}
             >
-              <CloudUpload sx={{ fontSize: 48, color: "grey.400", mb: 1 }} />
-              <Typography variant="body1" color="text.secondary" gutterBottom>
-                No images yet
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Click "Upload" to add images
+              <Typography variant="h6" color="primary.main">
+                Drop the image here...
               </Typography>
             </Paper>
-          ) : (
+          )}
+          {/* --- END MODIFICATION --- */}
+
+          {images.length === 0 &&
+            !loading &&
+            !isDragActive && ( // <-- Added !isDragActive
+              <Paper
+                sx={{
+                  p: 6,
+                  border: "2px dashed",
+                  borderColor: "grey.300",
+                  textAlign: "center",
+                  bgcolor: alpha("#f5f5f5", 0.3),
+                  pointerEvents: "none", // Don't block dropzone
+                }}
+              >
+                <CloudUpload sx={{ fontSize: 48, color: "grey.400", mb: 1 }} />
+                <Typography variant="body1" color="text.secondary" gutterBottom>
+                  No images yet
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Click "Upload" or drag & drop an image here
+                </Typography>
+              </Paper>
+            )}
+
+          {images.length > 0 && (
             <Grid container spacing={2}>
               {images.map((img, idx) => {
                 const imgSrc =
                   img.fullUrl ||
                   img.fullImageUrl ||
+                  img.previewUrl || // <-- Use previewUrl for new files
                   `${API_BASE_URL}${img.url || img.imageUrl}`;
                 return (
                   <Grid
@@ -440,7 +475,7 @@ export default function ImageUploadModal({
                     xs={6}
                     sm={4}
                     md={3}
-                    key={img.filename || img._id || idx}
+                    key={img.filename || img._id || img.id || idx} // <-- Use img.id for new files
                   >
                     <Card
                       sx={{
@@ -472,7 +507,6 @@ export default function ImageUploadModal({
                           Primary
                         </Box>
                       )}
-                      {/* --- NEW (Display Variant Tag on Image) --- */}
                       {img.variant && (
                         <Box
                           sx={{
@@ -492,7 +526,6 @@ export default function ImageUploadModal({
                           Variant
                         </Box>
                       )}
-                      {/* --- END NEW --- */}
                       <CardMedia
                         component="img"
                         height="140"
@@ -507,7 +540,7 @@ export default function ImageUploadModal({
                           <IconButton
                             size="small"
                             onClick={() => handleSetPrimary(img)}
-                            disabled={img.isPrimary}
+                            disabled={img.isPrimary || img._localFile} // <-- Disable for new files
                           >
                             {img.isPrimary ? (
                               <Star fontSize="small" color="primary" />
@@ -518,6 +551,7 @@ export default function ImageUploadModal({
                           <IconButton
                             size="small"
                             onClick={() => openReCrop(img)}
+                            disabled={img._localFile} // <-- Disable for new files
                           >
                             <Edit fontSize="small" />
                           </IconButton>

@@ -12,11 +12,19 @@ import {
   InputLabel,
   Select,
   FormHelperText,
+  DialogActions, // 1. Import DialogActions
 } from "@mui/material";
 import { Save, Cancel } from "@mui/icons-material";
 import { productService } from "../../services/productService";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
+// 2. Import standard styles
+import {
+  formActionsStyles,
+  cancelButtonStyles,
+  submitButtonStyles,
+  textFieldStyles,
+} from "../../theme/FormStyles";
 
 const sizeMappingSchema = yup.object({
   product: yup.string().trim().required("Product selection is required"),
@@ -126,7 +134,8 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
       transition={{ duration: 0.25 }}
     >
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {/* 3. Add p: 3 wrapper for content */}
+        <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
           <motion.div
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
@@ -137,7 +146,12 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
                 name="product"
                 control={control}
                 render={({ field }) => (
-                  <Select {...field} label="Product *" disabled={loading}>
+                  <Select
+                    {...field}
+                    label="Product *"
+                    disabled={loading}
+                    sx={textFieldStyles} // 4. Apply style
+                  >
                     <MenuItem value="">
                       <em>Select Product</em>
                     </MenuItem>
@@ -173,6 +187,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
                     placeholder={f.placeholder}
                     error={!!errors[f.name]}
                     helperText={errors[f.name]?.message}
+                    sx={textFieldStyles} // 4. Apply style
                   />
                 )}
               />
@@ -189,7 +204,11 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
                 name="status"
                 control={control}
                 render={({ field }) => (
-                  <Select {...field} label="Status *">
+                  <Select
+                    {...field}
+                    label="Status *"
+                    sx={textFieldStyles} // 4. Apply style
+                  >
                     <MenuItem value="Active">Active</MenuItem>
                     <MenuItem value="Inactive">Inactive</MenuItem>
                   </Select>
@@ -200,27 +219,28 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
               )}
             </FormControl>
           </motion.div>
-
-          <Box
-            sx={{ display: "flex", gap: 2, justifyContent: "flex-end", pt: 1 }}
-          >
-            <Button
-              variant="outlined"
-              startIcon={<Cancel />}
-              onClick={onCancel}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              startIcon={<Save />}
-              disabled={loading || isSubmitting}
-            >
-              {initialData ? "Update" : "Save"}
-            </Button>
-          </Box>
         </Box>
+
+        {/* 5. Use standard DialogActions */}
+        <DialogActions sx={formActionsStyles}>
+          <Button
+            variant="outlined"
+            startIcon={<Cancel />}
+            onClick={onCancel}
+            sx={cancelButtonStyles}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            startIcon={<Save />}
+            disabled={loading || isSubmitting}
+            sx={submitButtonStyles}
+          >
+            {initialData ? "Update" : "Save"}
+          </Button>
+        </DialogActions>
       </Box>
     </Box>
   );

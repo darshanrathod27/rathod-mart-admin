@@ -5,14 +5,17 @@ import asyncHandler from "../utils/asyncHandler.js";
 
 /**
  * Helper: Update product count for a category
- * Counts only active products (status: 'active')
+ * Counts active AND draft products
  */
 export const updateCategoryProductCount = async (categoryId) => {
   if (!categoryId) return;
   try {
     const count = await Product.countDocuments({
       category: categoryId,
-      status: "active",
+      // --- MODIFICATION ---
+      // Count 'active' and 'draft' products, not just 'active'
+      status: { $in: ["active", "draft"] },
+      // --- END MODIFICATION ---
     });
     await Category.findByIdAndUpdate(categoryId, { productsCount: count });
     console.log(`Updated productsCount for category ${categoryId} => ${count}`);

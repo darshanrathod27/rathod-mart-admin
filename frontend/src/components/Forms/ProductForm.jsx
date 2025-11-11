@@ -1,7 +1,6 @@
 // src/components/Forms/ProductForm.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react"; // Added useCallback
 import PropTypes from "prop-types";
-
 import {
   Box,
   TextField,
@@ -16,10 +15,17 @@ import {
   Divider,
   IconButton,
   DialogActions,
-  // --- NEW ---
   FormControl,
   InputLabel,
   Select,
+  // --- NEW ---
+  Grid,
+  Paper,
+  Card,
+  CardMedia,
+  CardActions,
+  Tooltip,
+  // --- END NEW ---
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -27,13 +33,15 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import CloseIcon from "@mui/icons-material/Close";
+import DeleteIcon from "@mui/icons-material/Delete";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
-import ImageUploadManager from "../ImageUpload/ImageUploadManager";
 // --- NEW ---
+import { useDropzone } from "react-dropzone";
+// --- END NEW ---
 import { inventoryService } from "../../services/inventoryService";
-
 import {
   StyledFormDialog,
   formHeaderStyles,
@@ -114,20 +122,21 @@ export default function ProductForm({
     },
   });
 
+  // --- MODIFICATION (Image State) ---
+  // images state now holds BOTH existing images (from initialData) and NEW files (_localFile)
   const [images, setImages] = useState(() =>
     (initialData?.images || []).map((img) => ({
+      ...img, // Keep all original properties like filename, url, etc.
       id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
-      filename: img.filename,
-      url: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
-      alt: img.alt || "",
-      isPrimary: !!img.isPrimary,
+      previewUrl: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl, // Use existing URL for preview
     }))
   );
+  // This new state tracks filenames of existing images to be deleted
+  const [deleteFilenames, setDeleteFilenames] = useState([]);
+  // --- END MODIFICATION ---
 
-  // --- NEW (Variant State) ---
   const [variants, setVariants] = useState([]);
   const [selectedVariant, setSelectedVariant] = useState("");
-  // --- END NEW ---
 
   const [tagInput, setTagInput] = useState("");
   const [featureInput, setFeatureInput] = useState("");
@@ -153,6 +162,7 @@ export default function ProductForm({
 
   useEffect(() => {
     if (initialData) {
+      // Reset form fields
       reset({
         name: initialData?.name || "",
         description: initialData?.description || "",
@@ -181,16 +191,18 @@ export default function ProductForm({
         tags: initialData?.tags || [],
         features: initialData?.features || [],
       });
+      // Reset images state
       setImages(
         (initialData?.images || []).map((img) => ({
+          ...img,
           id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
-          filename: img.filename,
-          url: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
-          alt: img.alt || "",
-          isPrimary: !!img.isPrimary,
+          previewUrl:
+            img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
         }))
       );
-      // --- NEW (Fetch Variants on Edit) ---
+      // Reset deleted filenames
+      setDeleteFilenames([]);
+
       const fetchVariants = async () => {
         try {
           const vRes = await inventoryService.getProductVariants(
@@ -205,9 +217,46 @@ export default function ProductForm({
       if (isEdit) {
         fetchVariants();
       }
-      // --- END NEW ---
     }
   }, [initialData, reset, isEdit]);
+
+  // --- NEW (Dropzone Logic) ---
+  const onDrop = useCallback(
+    (acceptedFiles) => {
+      if (!acceptedFiles || acceptedFiles.length === 0) return;
+
+      const newFileObjects = acceptedFiles.map((file) => ({
+        id: `${file.name}-${Date.now()}-${Math.random()}`,
+        _localFile: file, // This key is used in the submit function
+        previewUrl: URL.createObjectURL(file), // Local preview URL
+        alt: file.name,
+        isPrimary: false,
+        filename: file.name, // filename for logic
+      }));
+
+      setImages((prevImages) => [...prevImages, ...newFileObjects]);
+    },
+    [setImages]
+  );
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { "image/*": [] },
+    multiple: true,
+  });
+
+  // Handle removing an image from the preview
+  const handleRemoveImage = (id, filename) => {
+    // If the image has a `filename` and NOT a `_localFile`, it's an *existing* image.
+    const imageToRemove = images.find((img) => img.id === id);
+    if (imageToRemove && imageToRemove.filename && !imageToRemove._localFile) {
+      // Add its filename to the delete list
+      setDeleteFilenames((prev) => [...prev, imageToRemove.filename]);
+    }
+    // Always remove it from the 'images' preview state
+    setImages((prevImages) => prevImages.filter((img) => img.id !== id));
+  };
+  // --- END NEW ---
 
   const addTag = (value) => {
     const v = (value || "").trim();
@@ -234,7 +283,8 @@ export default function ProductForm({
     setValue("features", arr, { shouldValidate: true });
   };
 
-  const handleImagesChange = (nextImages) => setImages(nextImages);
+  // This function is no longer needed as we manage state directly
+  // const handleImagesChange = (nextImages) => setImages(nextImages);
 
   const onKeyDown = (e) => {
     const tag = e.target?.tagName?.toLowerCase();
@@ -263,29 +313,35 @@ export default function ProductForm({
     fd.append("tags", JSON.stringify(vals.tags || []));
     fd.append("features", JSON.stringify(vals.features || []));
 
-    // --- NEW (Append variantId if selected) ---
-    // (Aapke backend 'productController' mein 'variantIdForUploads' pehle se hai)
     if (selectedVariant) {
       fd.append("variantId", selectedVariant);
     }
-    // --- END NEW ---
 
+    // --- MODIFICATION (Submit Logic) ---
     const existingFilenames = [];
     (images || []).forEach((img) => {
-      if (img.file) {
-        fd.append("images", img.file, img.file.name || `img-${Date.now()}`);
-      } else if (img._localFile) {
+      if (img._localFile) {
+        // This is a NEW file, append it to 'images'
         fd.append(
           "images",
           img._localFile,
           img._localFile.name || `img-${Date.now()}`
         );
       } else if (img.filename) {
+        // This is an EXISTING file, add its name to keep it
         existingFilenames.push(img.filename);
       }
     });
-    if (existingFilenames.length)
-      fd.append("existingFilenames", JSON.stringify(existingFilenames));
+
+    // This logic from your original form is flawed, as it doesn't
+    // account for deletions. We will use our new deleteFilenames state.
+    // fd.append("existingFilenames", JSON.stringify(existingFilenames));
+
+    // Append the list of files to delete
+    if (deleteFilenames.length > 0) {
+      fd.append("deleteFilenames", JSON.stringify(deleteFilenames));
+    }
+    // --- END MODIFICATION ---
 
     if (isEdit) fd.append("_id", initialData._id);
     await onSubmit(fd, { isEdit, id: initialData?._id });
@@ -307,6 +363,8 @@ export default function ProductForm({
           </Typography>
 
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {/* ... (Fields: Name, Category, Brand, Prices) ... */}
+            {/* All these fields remain unchanged */}
             <Controller
               name="name"
               control={control}
@@ -435,14 +493,13 @@ export default function ProductForm({
 
         <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
 
-        {/* IMAGES - single outer dashed box, same size as UserForm (minHeight 120) */}
+        {/* --- MODIFICATION (Replaced ImageUploadManager with Dropzone) --- */}
         <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
           <Typography sx={sectionHeaderStyles}>
             <ImageOutlinedIcon sx={{ fontSize: 20 }} />
             Product Images & Preview
           </Typography>
 
-          {/* --- NEW (Variant Dropdown) --- */}
           {isEdit && variants && variants.length > 0 && (
             <FormControl fullWidth sx={{ mb: 2 }} size="small">
               <InputLabel>Assign new images to (Optional)</InputLabel>
@@ -464,37 +521,89 @@ export default function ProductForm({
               </Select>
             </FormControl>
           )}
-          {/* --- END NEW --- */}
 
-          <Box
+          {/* Dropzone Area */}
+          <Paper
+            {...getRootProps()}
             sx={{
-              border: "2px dashed #66BB6A",
+              border: "2px dashed",
+              borderColor: isDragActive ? "primary.main" : "#66BB6A",
               borderRadius: 2,
-              backgroundColor: "#F1F8F1",
+              backgroundColor: isDragActive ? "#E8F5E9" : "#F1F8F1",
               p: 2,
-              minHeight: "120px !important",
+              minHeight: "120px",
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
-              "& > *": {
-                minHeight: "unset !important",
-                background: "transparent !important",
-                border: "none !important",
-                boxShadow: "none !important",
-                width: "100% !important",
-              },
-              "& .dropzone, & .dz, &[data-dropzone]": { minHeight: 120 },
+              transition: "all 0.3s ease",
             }}
           >
-            <ImageUploadManager
-              images={images}
-              onImagesChange={handleImagesChange}
-              maxImages={15}
-              noWrapper={true}
-            />
-          </Box>
+            <input {...getInputProps()} />
+            {isDragActive ? (
+              <Typography variant="h6" color="primary">
+                Drop files here...
+              </Typography>
+            ) : (
+              <>
+                <CloudUploadIcon sx={{ fontSize: 40, color: "#66BB6A" }} />
+                <Typography color="textSecondary" sx={{ mt: 1 }}>
+                  Drag & drop images here, or click to browse
+                </Typography>
+                <Typography variant="caption" color="textSecondary">
+                  (You can add multiple images)
+                </Typography>
+              </>
+            )}
+          </Paper>
+
+          {/* Image Preview Grid */}
+          {images.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Grid container spacing={2}>
+                {images.map((img) => (
+                  <Grid item xs={6} sm={4} md={3} key={img.id}>
+                    <Card sx={{ position: "relative" }}>
+                      <CardMedia
+                        component="img"
+                        height="140"
+                        image={img.previewUrl} // Use local or remote URL
+                        alt={img.alt || "preview"}
+                        sx={{ objectFit: "cover" }}
+                      />
+                      <CardActions
+                        sx={{
+                          position: "absolute",
+                          top: 0,
+                          right: 0,
+                          p: 0.5,
+                        }}
+                      >
+                        <Tooltip title="Remove Image">
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              handleRemoveImage(img.id, img.filename)
+                            }
+                            sx={{
+                              bgcolor: "rgba(255, 0, 0, 0.6)",
+                              color: "white",
+                              "&:hover": { bgcolor: "rgba(255, 0, 0, 0.9)" },
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          )}
         </Box>
+        {/* --- END MODIFICATION --- */}
 
         <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
 
@@ -506,6 +615,8 @@ export default function ProductForm({
           </Typography>
 
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {/* ... (Rest of the form: descriptions, tags, features, status, etc.) ... */}
+            {/* All these fields remain unchanged */}
             <Controller
               name="shortDescription"
               control={control}
