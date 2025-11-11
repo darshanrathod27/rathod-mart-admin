@@ -16,6 +16,10 @@ import {
   Divider,
   IconButton,
   DialogActions,
+  // --- NEW ---
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -27,6 +31,8 @@ import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import ImageUploadManager from "../ImageUpload/ImageUploadManager";
+// --- NEW ---
+import { inventoryService } from "../../services/inventoryService";
 
 import {
   StyledFormDialog,
@@ -118,6 +124,11 @@ export default function ProductForm({
     }))
   );
 
+  // --- NEW (Variant State) ---
+  const [variants, setVariants] = useState([]);
+  const [selectedVariant, setSelectedVariant] = useState("");
+  // --- END NEW ---
+
   const [tagInput, setTagInput] = useState("");
   const [featureInput, setFeatureInput] = useState("");
   const tags = watch("tags") || [];
@@ -179,8 +190,24 @@ export default function ProductForm({
           isPrimary: !!img.isPrimary,
         }))
       );
+      // --- NEW (Fetch Variants on Edit) ---
+      const fetchVariants = async () => {
+        try {
+          const vRes = await inventoryService.getProductVariants(
+            initialData._id
+          );
+          setVariants(vRes.data || vRes || []);
+        } catch (e) {
+          console.error("Failed to fetch variants for form", e);
+          setVariants([]);
+        }
+      };
+      if (isEdit) {
+        fetchVariants();
+      }
+      // --- END NEW ---
     }
-  }, [initialData, reset]);
+  }, [initialData, reset, isEdit]);
 
   const addTag = (value) => {
     const v = (value || "").trim();
@@ -235,6 +262,13 @@ export default function ProductForm({
     fd.append("trending", vals.trending ? "true" : "false");
     fd.append("tags", JSON.stringify(vals.tags || []));
     fd.append("features", JSON.stringify(vals.features || []));
+
+    // --- NEW (Append variantId if selected) ---
+    // (Aapke backend 'productController' mein 'variantIdForUploads' pehle se hai)
+    if (selectedVariant) {
+      fd.append("variantId", selectedVariant);
+    }
+    // --- END NEW ---
 
     const existingFilenames = [];
     (images || []).forEach((img) => {
@@ -407,6 +441,31 @@ export default function ProductForm({
             <ImageOutlinedIcon sx={{ fontSize: 20 }} />
             Product Images & Preview
           </Typography>
+
+          {/* --- NEW (Variant Dropdown) --- */}
+          {isEdit && variants && variants.length > 0 && (
+            <FormControl fullWidth sx={{ mb: 2 }} size="small">
+              <InputLabel>Assign new images to (Optional)</InputLabel>
+              <Select
+                value={selectedVariant}
+                label="Assign new images to (Optional)"
+                onChange={(e) => setSelectedVariant(e.target.value)}
+                sx={textFieldStyles}
+              >
+                <MenuItem value="">
+                  <em>General Images (No Variant)</em>
+                </MenuItem>
+                {variants.map((v) => (
+                  <MenuItem key={v._id} value={v._id}>
+                    {v.color?.colorName ? `${v.color.colorName} ` : ""}
+                    {v.size?.sizeName ? ` / ${v.size.sizeName}` : ""}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          {/* --- END NEW --- */}
+
           <Box
             sx={{
               border: "2px dashed #66BB6A",
@@ -591,7 +650,7 @@ export default function ProductForm({
                 >
                   <MenuItem value="draft">Draft</MenuItem>
                   <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
+                  <MenuItem valueValue="inactive">Inactive</MenuItem>
                 </TextField>
               )}
             />
