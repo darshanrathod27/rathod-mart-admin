@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import cookieParser from "cookie-parser";
 import connectDB from "./config/database.js";
 
 // routes
@@ -14,8 +15,9 @@ import productSizeMappingRoutes from "./routes/productSizeMappingRoutes.js";
 import productColorMappingRoutes from "./routes/productColorMappingRoutes.js";
 import variantMasterRoutes from "./routes/variantMasterRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
-// --- NEW ---
-import reviewRoutes from "./routes/reviewRoutes.js"; // 1. Nayi route file import karein
+import reviewRoutes from "./routes/reviewRoutes.js";
+import wishlistRoutes from "./routes/wishlistRoutes.js";
+import cartRoutes from "./routes/cartRoutes.js"; // 1. Import Cart routes
 
 dotenv.config();
 connectDB();
@@ -34,6 +36,8 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+app.use(cookieParser());
+
 // ensure uploads folder served
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -51,15 +55,18 @@ app.use("/api/product-size-mapping", productSizeMappingRoutes);
 app.use("/api/product-color-mapping", productColorMappingRoutes);
 app.use("/api/variant-master", variantMasterRoutes);
 app.use("/api/inventory", inventoryRoutes);
-// --- NEW ---
-app.use("/api/reviews", reviewRoutes); // 2. Nayi route ko register karein
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/cart", cartRoutes); // 2. Use Cart routes
 
-// global error handler (returns err.statusCode if set)
+// global error handler
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(err.statusCode || 500).json({
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
     success: false,
     message: err.message || "Something went wrong",
+    stack: process.env.NODE_ENV === "production" ? "🥞" : err.stack,
   });
 });
 

@@ -4,18 +4,16 @@ import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
+import generateToken from "../utils/generateToken.js";
 
 const ah = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "profile");
 
-// ensure dir exists
+// --- HELPER FUNCTIONS (Keep these as they are) ---
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
 const makeFilename = (prefix = "profile") =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-
-// helper to save buffer using sharp (resize)
 async function saveBufferAsJpeg(buffer, filename, size = 300) {
   const out = path.join(UPLOAD_DIR, filename);
   await sharp(buffer)
@@ -25,19 +23,15 @@ async function saveBufferAsJpeg(buffer, filename, size = 300) {
     .toFile(out);
   return `/uploads/profile/${filename}`;
 }
-
 async function removeFileByUrl(urlPath) {
   if (!urlPath) return;
   try {
     const p = path.join(process.cwd(), urlPath.replace(/^\//, ""));
     if (fs.existsSync(p)) await fs.promises.unlink(p);
   } catch (err) {
-    // silent
     console.warn("Failed to delete file", urlPath, err.message);
   }
 }
-
-// allowlist sort
 const SORT_ALLOW = new Set([
   "name",
   "email",
@@ -46,6 +40,106 @@ const SORT_ALLOW = new Set([
   "createdAt",
   "updatedAt",
 ]);
+// --- END HELPER FUNCTIONS ---
+
+// @desc    Auth user & get token (Login)
+// @route   POST /api/users/login
+// @access  Public
+export const loginUser = ah(async (req, res) => {
+  const { email, password } = req.body;
+
+  const user = await User.findOne({ email }).select("+password");
+
+  if (user && (await bcrypt.compare(password, user.password))) {
+    generateToken(res, user._id);
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      profileImage: user.profileImage,
+    });
+  } else {
+    res.status(401);
+    throw new Error("Invalid email or password");
+  }
+});
+
+// @desc    Register a new user (for customer frontend)
+// @route   POST /api/users/register
+// @access  Public
+export const registerUser = ah(async (req, res) => {
+  const { name, email, password, phone } = req.body;
+
+  if (!name || !email || !password) {
+    res.status(400);
+    throw new Error("Please fill all required fields");
+  }
+
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    res.status(400);
+    throw new Error("User already exists");
+  }
+
+  // Public registration defaults to 'customer'
+  const user = await User.create({
+    name,
+    email,
+    password,
+    phone: phone || "",
+    role: "customer",
+    status: "active",
+  });
+
+  if (user) {
+    generateToken(res, user._id);
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } else {
+    res.status(400);
+    throw new Error("Invalid user data");
+  }
+});
+
+// @desc    Logout user / clear cookie
+// @route   POST /api/users/logout
+// @access  Private (must be logged in to log out)
+export const logoutUser = ah(async (req, res) => {
+  res.cookie("jwt", "", {
+    httpOnly: true,
+    expires: new Date(0),
+  });
+  res.status(200).json({ message: "Logged out successfully" });
+});
+
+// @desc    Get user profile
+// @route   GET /api/users/profile
+// @access  Private
+export const getUserProfile = ah(async (req, res) => {
+  // req.user is set by the 'protect' middleware
+  const user = await User.findById(req.user._id);
+  if (user) {
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      profileImage: user.profileImage,
+    });
+  } else {
+    res.status(404);
+    throw new Error("User not found");
+  }
+});
+
+// --- YOUR EXISTING ADMIN FUNCTIONS ---
+// (These will now be protected by 'admin' middleware in userRoutes.js)
 
 export const createUser = ah(async (req, res) => {
   const {

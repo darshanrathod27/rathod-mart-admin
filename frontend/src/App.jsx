@@ -1,3 +1,4 @@
+// frontend/src/App.jsx
 import React from "react";
 import {
   BrowserRouter as Router,
@@ -9,7 +10,8 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import { Toaster } from "react-hot-toast";
 import { theme } from "./theme/theme";
-import { useAuth } from "./hooks/useAuth";
+// import { useAuth } from "./hooks/useAuth"; // 1. REMOVE
+import { useSelector } from "react-redux"; // 2. ADD
 import Login from "./pages/Login";
 import Layout from "./components/Layout/Layout";
 import Users from "./pages/Users";
@@ -22,7 +24,8 @@ import InventoryMaster from "./pages/InventoryMaster";
 
 // Protected Route Component
 function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useAuth();
+  // const { isAuthenticated } = useAuth(); // 3. REMOVE
+  const { isAuthenticated } = useSelector((state) => state.auth); // 4. ADD
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
