@@ -61,6 +61,8 @@ export default function Products() {
   const [variantProduct, setVariantProduct] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [imageModalProduct, setImageModalProduct] = useState(null);
+
   // pagination & search
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -69,8 +71,7 @@ export default function Products() {
   const debouncedSearch = useDebounce(searchTerm, 500);
   const [filterCategory, setFilterCategory] = useState("");
 
-  // fetch products
-  const fetchProducts = useCallback(async () => {
+  const fetchProducts = async () => {
     setLoading(true);
     try {
       const resp = await productService.getProducts({
@@ -79,9 +80,7 @@ export default function Products() {
         search: debouncedSearch,
         category: filterCategory,
       });
-      // resp is { success, data, pagination }
       const rows = resp.data || [];
-      // ensure there's a readable image URL and normalize stock field
       const mapped = rows.map((r) => {
         const images = (r.images || []).map((img) => ({
           ...img,
@@ -93,7 +92,6 @@ export default function Products() {
         return {
           ...r,
           images,
-          // keep old fallback keys for compatibility
           totalStock: r.stock ?? r.totalStock ?? 0,
           stock: r.stock ?? r.totalStock ?? 0,
         };
@@ -106,9 +104,8 @@ export default function Products() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, filterCategory]);
+  };
 
-  // categories
   const fetchCategories = useCallback(async () => {
     try {
       const res = await categoryService.getCategories({ limit: 200 });
@@ -124,17 +121,15 @@ export default function Products() {
 
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+  }, [page, pageSize, debouncedSearch, filterCategory]);
 
-  // Listen to global inventory updates so products refresh automatically.
   useEffect(() => {
     const onInv = (e) => {
-      // optionally you can inspect e.detail.productId
       fetchProducts();
     };
     window.addEventListener("inventory:updated", onInv);
     return () => window.removeEventListener("inventory:updated", onInv);
-  }, [fetchProducts]);
+  }, [page, pageSize, debouncedSearch, filterCategory]);
 
   const getImageUrl = (img) => {
     if (!img) return null;
@@ -162,13 +157,18 @@ export default function Products() {
       if (isEdit && id) {
         await productService.updateProduct(id, formData);
         toast.success("Product updated successfully");
+        await fetchProducts();
       } else {
         await productService.createProduct(formData);
         toast.success("Product created successfully");
+        if (page !== 0) {
+          setPage(0);
+        } else {
+          await fetchProducts();
+        }
       }
       setOpenForm(false);
       setEditProduct(null);
-      await fetchProducts(); // Refresh immediately
     } catch (e) {
       console.error("Save error:", e);
       toast.error(e.message || "Save failed");
@@ -206,7 +206,7 @@ export default function Products() {
   };
 
   const handleOpenImages = (row) => {
-    setMenuRow(row);
+    setImageModalProduct(row);
     setOpenImageModal(true);
     closeMenu();
   };
@@ -231,6 +231,7 @@ export default function Products() {
     }
   };
 
+  // --- MODIFICATION (Columns Array) ---
   const columns = [
     {
       field: "images",
@@ -270,9 +271,7 @@ export default function Products() {
           (params.row.category && params.row.category.name) ||
           params.row.category ||
           "Uncategorized";
-        const shortDesc =
-          params.row.shortDescription ||
-          (params.row.description || "").slice(0, 120);
+        // REMOVED shortDesc from here
         return (
           <Box>
             <Typography
@@ -307,20 +306,7 @@ export default function Products() {
               ) : null}
             </Stack>
 
-            {shortDesc ? (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {shortDesc}
-              </Typography>
-            ) : null}
+            {/* REMOVED shortDesc Typography from here */}
           </Box>
         );
       },
@@ -333,23 +319,33 @@ export default function Products() {
         <Typography variant="body2">{p.value || "-"}</Typography>
       ),
     },
+
+    // --- REPLACED 'Category' with 'shortDescription' ---
     {
-      field: "category",
-      headerName: "Category",
-      width: 150,
+      field: "shortDescription",
+      headerName: "Description",
+      width: 200,
+      sortable: false,
       renderCell: (params) => (
-        <Chip
-          size="small"
-          label={
-            (params.row.category && params.row.category.name) ||
-            params.row.category ||
-            "Uncategorized"
-          }
-          color="default"
-          variant="outlined"
-        />
+        <Tooltip title={params.value || ""}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: "-webkit-box",
+              WebkitLineClamp: 3, // 3 lines
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              whiteSpace: "normal", // Allow wrapping
+            }}
+          >
+            {params.value || "—"}
+          </Typography>
+        </Tooltip>
       ),
     },
+    // --- END REPLACEMENT ---
+
     {
       field: "basePrice",
       headerName: "Price",
@@ -360,8 +356,6 @@ export default function Products() {
         </Typography>
       ),
     },
-
-    // NEW: Rating column (read-only stars)
     {
       field: "rating",
       headerName: "Rating",
@@ -375,7 +369,6 @@ export default function Products() {
         />
       ),
     },
-
     {
       field: "stock",
       headerName: "Stock",
@@ -445,6 +438,7 @@ export default function Products() {
       ),
     },
   ];
+  // --- END COLUMN MODIFICATION ---
 
   return (
     <Box sx={{ p: 2 }}>
@@ -474,7 +468,7 @@ export default function Products() {
               >
                 <MenuItem value="">All Categories</MenuItem>
                 {categories.map((c) => (
-                  <MenuItem key={c._id} value={c._1}>
+                  <MenuItem key={c._id} value={c._id}>
                     {c.name}
                   </MenuItem>
                 ))}
@@ -513,7 +507,7 @@ export default function Products() {
             }}
             loading={loading}
             disableRowSelectionOnClick
-            rowHeight={110}
+            rowHeight={110} // Keep rowHeight for the main "Product" cell
             sx={{
               "& .MuiDataGrid-cell": {
                 display: "flex",
@@ -557,7 +551,6 @@ export default function Products() {
         </MItem>
       </Menu>
 
-      {/* --- Form modal: keep title on FormModal, but render ProductForm as embedded to avoid duplicate title --- */}
       <FormModal
         open={openForm}
         onClose={() => {
@@ -597,14 +590,14 @@ export default function Products() {
         />
       )}
 
-      {openImageModal && menuRow && (
+      {openImageModal && imageModalProduct && (
         <ImageUploadModal
           open={openImageModal}
           onClose={() => {
             setOpenImageModal(false);
-            setMenuRow(null);
+            setImageModalProduct(null);
           }}
-          product={menuRow}
+          product={imageModalProduct}
           onUploadSuccess={() => fetchProducts()}
         />
       )}

@@ -17,11 +17,19 @@ import {
   Grid,
   Avatar,
   Chip,
+  DialogActions, // 1. Import DialogActions
 } from "@mui/material";
 import { Save, Cancel, ColorLens } from "@mui/icons-material";
 import { productService } from "../../services/productService";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
+// 2. Import standard styles
+import {
+  formActionsStyles,
+  cancelButtonStyles,
+  submitButtonStyles,
+  textFieldStyles,
+} from "../../theme/FormStyles";
 
 // same presets you had
 const PRESET_COLORS = [
@@ -126,7 +134,8 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
       animate={{ opacity: 1 }}
     >
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {/* 3. Add p: 3 wrapper */}
+        <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
           {/* Product */}
           <FormControl fullWidth error={!!errors.product}>
             <InputLabel>Product *</InputLabel>
@@ -134,7 +143,12 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
               name="product"
               control={control}
               render={({ field }) => (
-                <Select {...field} label="Product *" disabled={loading}>
+                <Select
+                  {...field}
+                  label="Product *"
+                  disabled={loading}
+                  sx={textFieldStyles} // 4. Apply style
+                >
                   <MenuItem value="">
                     <em>Select Product</em>
                   </MenuItem>
@@ -163,6 +177,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
                 placeholder="e.g., Red, Blue"
                 error={!!errors.colorName}
                 helperText={errors.colorName?.message}
+                sx={textFieldStyles} // 4. Apply style
               />
             )}
           />
@@ -283,6 +298,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
                       inputProps={{
                         style: { textTransform: "uppercase", fontWeight: 600 },
                       }}
+                      sx={textFieldStyles} // 4. Apply style
                     />
                   </>
                 )}
@@ -306,7 +322,11 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
               name="status"
               control={control}
               render={({ field }) => (
-                <Select {...field} label="Status *">
+                <Select
+                  {...field}
+                  label="Status *"
+                  sx={textFieldStyles} // 4. Apply style
+                >
                   <MenuItem value="Active">Active</MenuItem>
                   <MenuItem value="Inactive">Inactive</MenuItem>
                 </Select>
@@ -316,28 +336,28 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
               <FormHelperText>{errors.status.message}</FormHelperText>
             )}
           </FormControl>
-
-          {/* Actions */}
-          <Box
-            sx={{ display: "flex", gap: 2, justifyContent: "flex-end", pt: 1 }}
-          >
-            <Button
-              variant="outlined"
-              startIcon={<Cancel />}
-              onClick={onCancel}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              startIcon={<Save />}
-              disabled={loading || isSubmitting}
-            >
-              {initialData ? "Update" : "Save"}
-            </Button>
-          </Box>
         </Box>
+
+        {/* 5. Use standard DialogActions */}
+        <DialogActions sx={formActionsStyles}>
+          <Button
+            variant="outlined"
+            startIcon={<Cancel />}
+            onClick={onCancel}
+            sx={cancelButtonStyles}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            startIcon={<Save />}
+            disabled={loading || isSubmitting}
+            sx={submitButtonStyles}
+          >
+            {initialData ? "Update" : "Save"}
+          </Button>
+        </DialogActions>
       </Box>
     </Box>
   );

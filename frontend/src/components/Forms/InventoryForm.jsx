@@ -10,12 +10,21 @@ import {
   Select,
   FormHelperText,
   Typography,
+  DialogActions, // 1. Import DialogActions
 } from "@mui/material";
 import { useForm, Controller } from "react-hook-form";
 import * as yup from "yup";
 import { yupResolver } from "@hookform/resolvers/yup";
 import toast from "react-hot-toast";
 import { inventoryService } from "../../services/inventoryService";
+// 2. Import standard styles
+import {
+  formActionsStyles,
+  cancelButtonStyles,
+  submitButtonStyles,
+  textFieldStyles,
+} from "../../theme/FormStyles";
+import { Save, Cancel } from "@mui/icons-material"; // Import icons
 
 const schema = yup.object({
   variant: yup.string().nullable(),
@@ -34,7 +43,7 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
   const {
     control,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting }, // 7. Get isSubmitting
     reset,
   } = useForm({
     resolver: yupResolver(schema),
@@ -91,86 +100,99 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
   };
 
   return (
-    <Box
-      component="form"
-      onSubmit={handleSubmit(submit)}
-      noValidate
-      sx={{ display: "flex", flexDirection: "column", gap: 2 }}
-    >
-      <FormControl fullWidth>
-        <InputLabel>Variant (optional)</InputLabel>
+    <Box component="form" onSubmit={handleSubmit(submit)} noValidate>
+      {/* 3. Add p: 3 wrapper */}
+      <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
+        <FormControl fullWidth>
+          <InputLabel>Variant (optional)</InputLabel>
+          <Controller
+            name="variant"
+            control={control}
+            render={({ field }) => (
+              <Select
+                {...field}
+                label="Variant (optional)"
+                disabled={loading || variants.length === 0}
+                sx={textFieldStyles} // 4. Apply style
+              >
+                <MenuItem value="">
+                  <em>Base product stock</em>
+                </MenuItem>
+                {(variants || []).map((v) => (
+                  <MenuItem key={v._id} value={v._id}>
+                    {`${v?.size?.sizeName || ""}${v?.size ? " • " : ""}${
+                      v?.color?.colorName || ""
+                    }`}
+                  </MenuItem>
+                ))}
+              </Select>
+            )}
+          />
+          <FormHelperText>
+            Leave blank to adjust base product stock; or choose a specific
+            variant.
+          </FormHelperText>
+        </FormControl>
+
         <Controller
-          name="variant"
+          name="quantity"
           control={control}
           render={({ field }) => (
-            <Select
+            <TextField
               {...field}
-              label="Variant (optional)"
-              disabled={loading || variants.length === 0}
-            >
-              <MenuItem value="">
-                <em>Base product stock</em>
-              </MenuItem>
-              {(variants || []).map((v) => (
-                <MenuItem key={v._id} value={v._id}>
-                  {`${v?.size?.sizeName || ""}${v?.size ? " • " : ""}${
-                    v?.color?.colorName || ""
-                  }`}
-                </MenuItem>
-              ))}
-            </Select>
+              type="number"
+              label="Quantity"
+              error={!!errors.quantity}
+              helperText={errors.quantity?.message}
+              fullWidth
+              sx={textFieldStyles} // 4. Apply style
+            />
           )}
         />
-        <FormHelperText>
-          Leave blank to adjust base product stock; or choose a specific
-          variant.
-        </FormHelperText>
-      </FormControl>
 
-      <Controller
-        name="quantity"
-        control={control}
-        render={({ field }) => (
-          <TextField
-            {...field}
-            type="number"
-            label="Quantity"
-            error={!!errors.quantity}
-            helperText={errors.quantity?.message}
-            fullWidth
-          />
-        )}
-      />
+        <Controller
+          name="remarks"
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              label="Remarks"
+              placeholder={
+                mode === "add"
+                  ? "Purchase / Restock note"
+                  : "Sale / Adjustment note"
+              }
+              error={!!errors.remarks}
+              helperText={errors.remarks?.message}
+              fullWidth
+              multiline
+              maxRows={3}
+              sx={textFieldStyles} // 4. Apply style
+            />
+          )}
+        />
+      </Box>
 
-      <Controller
-        name="remarks"
-        control={control}
-        render={({ field }) => (
-          <TextField
-            {...field}
-            label="Remarks"
-            placeholder={
-              mode === "add"
-                ? "Purchase / Restock note"
-                : "Sale / Adjustment note"
-            }
-            error={!!errors.remarks}
-            helperText={errors.remarks?.message}
-            fullWidth
-            multiline
-            maxRows={3}
-          />
-        )}
-      />
-
-      <Box sx={{ display: "flex", gap: 2, mt: 1, justifyContent: "flex-end" }}>
-        <Button variant="outlined" onClick={onClose}>
+      {/* 5. Use standard DialogActions */}
+      <DialogActions sx={formActionsStyles}>
+        <Button
+          variant="outlined"
+          onClick={onClose}
+          sx={cancelButtonStyles}
+          startIcon={<Cancel />}
+        >
           Cancel
         </Button>
-        <Button type="submit" variant="contained">
+        <Button
+          type="submit"
+          variant="contained"
+          sx={submitButtonStyles}
+          startIcon={<Save />}
+          disabled={isSubmitting}
+        >
           {mode === "add" ? "Add Stock" : "Reduce Stock"}
         </Button>
-      </Box>
+      </DialogActions>
     </Box>
   );
 };

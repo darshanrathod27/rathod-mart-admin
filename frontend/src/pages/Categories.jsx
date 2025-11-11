@@ -160,14 +160,16 @@ const Categories = () => {
       ),
     },
     {
+      // --- MODIFICATION ---
+      // Simplified date column to fix display issue
       field: "createdAt",
       headerName: "Created",
       width: 140,
-      valueGetter: (params) => params.row?.createdAt || null,
-      renderCell: (params) =>
-        params.value
-          ? new Date(params.value).toLocaleDateString("en-IN")
-          : "N/A",
+      renderCell: (params) => {
+        const date = params.row.createdAt;
+        return date ? new Date(date).toLocaleDateString("en-IN") : "N/A";
+      },
+      // --- END MODIFICATION ---
     },
 
     {
