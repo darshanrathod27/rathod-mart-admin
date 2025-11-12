@@ -5,7 +5,7 @@ import { body, param, validationResult } from "express-validator";
 // Auth middlewares for protected/admin routes
 import { protect, admin } from "../middleware/authMiddleware.js";
 
-// Controller functions (including the recountAllCategories admin helper)
+// Controller functions (including recountAllCategories and fixCategoryIcons)
 import {
   getCategories,
   getCategory,
@@ -13,6 +13,7 @@ import {
   updateCategory,
   deleteCategory,
   recountAllCategories,
+  fixCategoryIcons, // <-- newly added
 } from "../controllers/categoryController.js";
 
 const router = express.Router();
@@ -50,6 +51,7 @@ const updateRules = [
 ];
 
 // Public list/search/paginate/sort/filter
+// Example query params: page, limit, search, status, sortBy, sortOrder, dateFrom, dateTo
 router.get("/", getCategories);
 
 // Admin-only: recount all category product counts (repair/fix route)
@@ -59,6 +61,9 @@ router.get(
   admin, // user must be admin
   recountAllCategories
 );
+
+// Admin-only: fix all category icons/colors
+router.get("/admin/fix-icons", protect, admin, fixCategoryIcons);
 
 // Create
 router.post("/", createRules, validate, createCategory);

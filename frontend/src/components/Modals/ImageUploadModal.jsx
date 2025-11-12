@@ -15,13 +15,13 @@ import {
   Box,
   LinearProgress,
   Paper,
-  alpha,
   Stack,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import {
   CloudUpload,
   Delete,
@@ -35,16 +35,18 @@ import { inventoryService } from "../../services/inventoryService";
 import toast from "react-hot-toast";
 import ReactCrop from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-// --- NEW ---
 import { useDropzone } from "react-dropzone";
-// --- END NEW ---
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-// Helper function to create cropped image
+/**
+ * Helper: create a cropped Blob from image src and pixelCrop
+ * NOTE: sets image.crossOrigin = 'anonymous' to avoid tainting the canvas
+ */
 const getCroppedImg = async (imageSrc, pixelCrop) => {
   const image = new Image();
+  image.crossOrigin = "anonymous";
   image.src = imageSrc;
 
   await new Promise((resolve, reject) => {
@@ -89,6 +91,7 @@ const CropDialog = ({ open, src, onCancel, onApply }) => {
   const onLoad = useCallback((img) => {
     imgRef.current = img;
     const aspect = 1;
+    // start with a centered square crop that fits
     const width = img.width > img.height ? (img.height / img.width) * 100 : 100;
     const height =
       img.height > img.width ? (img.width / img.height) * 100 : 100;
@@ -144,6 +147,7 @@ const CropDialog = ({ open, src, onCancel, onApply }) => {
           </IconButton>
         </Stack>
       </DialogTitle>
+
       <DialogContent>
         <Box sx={{ display: "flex", justifyContent: "center", mt: 1 }}>
           {src && (
@@ -153,17 +157,20 @@ const CropDialog = ({ open, src, onCancel, onApply }) => {
               onComplete={(c) => setCompletedCrop(c)}
               aspect={1}
             >
+              {/* IMPORTANT: crossOrigin added to avoid canvas tainting issues */}
               <img
                 ref={imgRef}
                 src={src}
                 onLoad={(e) => onLoad(e.currentTarget)}
                 style={{ maxWidth: "100%", maxHeight: "60vh" }}
                 alt="Crop"
+                crossOrigin="anonymous"
               />
             </ReactCrop>
           )}
         </Box>
       </DialogContent>
+
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onCancel} color="inherit">
           Cancel
@@ -199,15 +206,14 @@ export default function ImageUploadModal({
   const [variants, setVariants] = useState([]);
   const [selectedVariant, setSelectedVariant] = useState("");
 
-  // --- NEW (Dropzone Logic) ---
+  // Dropzone handlers (single-file flow)
   const onDrop = useCallback((acceptedFiles) => {
-    // This modal's flow is one-file-at-a-time for cropping
     const file = acceptedFiles?.[0];
     if (!file) return;
     setPendingFile(file);
     const src = URL.createObjectURL(file);
     setPendingSrc(src);
-    setShowCrop(true); // Trigger crop dialog
+    setShowCrop(true);
   }, []);
 
   const {
@@ -220,10 +226,9 @@ export default function ImageUploadModal({
     accept: { "image/*": [] },
     maxFiles: 1,
     multiple: false,
-    noClick: true, // We disable click on the content area
-    noKeyboard: true, // We disable keyboard activation
+    noClick: true,
+    noKeyboard: true,
   });
-  // --- END NEW ---
 
   const fetchImagesAndVariants = useCallback(async () => {
     if (!product?._id) return;
@@ -235,7 +240,8 @@ export default function ImageUploadModal({
       ]);
 
       setImages(imgs || []);
-      setVariants(vRes.data || vRes || []);
+      // both shapes handled: vRes may be { data: [...] } or [...]
+      setVariants(vRes?.data || vRes || []);
     } catch (e) {
       console.error("Fetch data error:", e);
       toast.error("Failed to load images or variants");
@@ -250,9 +256,6 @@ export default function ImageUploadModal({
     }
   }, [open, fetchImagesAndVariants]);
 
-  // This function is no longer used, onDrop replaces it
-  // const onInputChange = (e) => { ... };
-
   const applyNewCropAndUpload = async (blob) => {
     setShowCrop(false);
     setUploading(true);
@@ -260,13 +263,13 @@ export default function ImageUploadModal({
       const file = new File(
         [blob],
         pendingFile?.name || `img-${Date.now()}.jpg`,
-        { type: "image/jpeg" }
+        {
+          type: "image/jpeg",
+        }
       );
       const fd = new FormData();
       fd.append("images", file);
-      if (selectedVariant) {
-        fd.append("variantId", selectedVariant);
-      }
+      if (selectedVariant) fd.append("variantId", selectedVariant);
 
       await productService.uploadMultipleProductImages(product._id, fd);
       toast.success("Image uploaded");
@@ -313,11 +316,14 @@ export default function ImageUploadModal({
     const src =
       img.fullUrl ||
       img.fullImageUrl ||
+      img.previewUrl ||
       `${API_BASE_URL}${img.url || img.imageUrl}`;
     setReCrop({ img, src });
   };
 
   const applyReCrop = async (blob) => {
+    // reCrop may be referenced in the outer scope; capture it early
+    const localReCrop = reCrop;
     setReCrop(null);
     setUploading(true);
     try {
@@ -326,19 +332,19 @@ export default function ImageUploadModal({
       });
       const fd = new FormData();
       fd.append("images", file);
-
-      if (selectedVariant) {
-        fd.append("variantId", selectedVariant);
-      }
+      if (selectedVariant) fd.append("variantId", selectedVariant);
 
       await productService.uploadMultipleProductImages(product._id, fd);
 
+      // delete original image (best-effort)
       try {
         await productService.deleteProductImage(
           product._id,
-          reCrop.img.filename || reCrop.img._id
+          localReCrop.img.filename || localReCrop.img._id
         );
-      } catch {}
+      } catch (err) {
+        // ignore delete errors
+      }
 
       toast.success("Image updated");
       await fetchImagesAndVariants();
@@ -369,19 +375,15 @@ export default function ImageUploadModal({
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} alignItems="center">
-              {/* --- MODIFICATION (Button now triggers dropzone 'open') --- */}
-              {/* <label htmlFor="prod-img-input"> ... </label> (REMOVED) */}
-              {/* <input id="prod-img-input" ... /> (REMOVED) */}
               <Button
                 component="span"
                 variant="contained"
                 startIcon={<CloudUpload />}
                 size="small"
-                onClick={openFileDialog} // <-- This opens the file dialog
+                onClick={openFileDialog}
               >
                 Upload
               </Button>
-              {/* --- END MODIFICATION --- */}
               <IconButton size="small" onClick={onClose}>
                 <Close />
               </IconButton>
@@ -389,13 +391,11 @@ export default function ImageUploadModal({
           </Stack>
         </DialogTitle>
 
-        {/* --- MODIFICATION (Content is now the dropzone) --- */}
         <DialogContent
           sx={{ minHeight: 300, outline: "none" }}
           {...getRootProps()}
         >
           <input {...getInputProps()} />
-          {/* --- END MODIFICATION --- */}
 
           {(uploading || loading) && <LinearProgress sx={{ mb: 2 }} />}
 
@@ -420,7 +420,6 @@ export default function ImageUploadModal({
             </FormControl>
           )}
 
-          {/* --- MODIFICATION (Show drop UI) --- */}
           {isDragActive && (
             <Paper
               sx={{
@@ -429,6 +428,7 @@ export default function ImageUploadModal({
                 borderColor: "primary.main",
                 textAlign: "center",
                 bgcolor: alpha("#E8F5E9", 0.7),
+                mb: 2,
               }}
             >
               <Typography variant="h6" color="primary.main">
@@ -436,30 +436,28 @@ export default function ImageUploadModal({
               </Typography>
             </Paper>
           )}
-          {/* --- END MODIFICATION --- */}
 
-          {images.length === 0 &&
-            !loading &&
-            !isDragActive && ( // <-- Added !isDragActive
-              <Paper
-                sx={{
-                  p: 6,
-                  border: "2px dashed",
-                  borderColor: "grey.300",
-                  textAlign: "center",
-                  bgcolor: alpha("#f5f5f5", 0.3),
-                  pointerEvents: "none", // Don't block dropzone
-                }}
-              >
-                <CloudUpload sx={{ fontSize: 48, color: "grey.400", mb: 1 }} />
-                <Typography variant="body1" color="text.secondary" gutterBottom>
-                  No images yet
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Click "Upload" or drag & drop an image here
-                </Typography>
-              </Paper>
-            )}
+          {images.length === 0 && !loading && !isDragActive && (
+            <Paper
+              sx={{
+                p: 6,
+                border: "2px dashed",
+                borderColor: "grey.300",
+                textAlign: "center",
+                bgcolor: alpha("#f5f5f5", 0.3),
+                pointerEvents: "none",
+                mb: 2,
+              }}
+            >
+              <CloudUpload sx={{ fontSize: 48, color: "grey.400", mb: 1 }} />
+              <Typography variant="body1" color="text.secondary" gutterBottom>
+                No images yet
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Click "Upload" or drag & drop an image here
+              </Typography>
+            </Paper>
+          )}
 
           {images.length > 0 && (
             <Grid container spacing={2}>
@@ -467,7 +465,7 @@ export default function ImageUploadModal({
                 const imgSrc =
                   img.fullUrl ||
                   img.fullImageUrl ||
-                  img.previewUrl || // <-- Use previewUrl for new files
+                  img.previewUrl ||
                   `${API_BASE_URL}${img.url || img.imageUrl}`;
                 return (
                   <Grid
@@ -475,7 +473,7 @@ export default function ImageUploadModal({
                     xs={6}
                     sm={4}
                     md={3}
-                    key={img.filename || img._id || img.id || idx} // <-- Use img.id for new files
+                    key={img.filename || img._id || img.id || idx}
                   >
                     <Card
                       sx={{
@@ -540,7 +538,7 @@ export default function ImageUploadModal({
                           <IconButton
                             size="small"
                             onClick={() => handleSetPrimary(img)}
-                            disabled={img.isPrimary || img._localFile} // <-- Disable for new files
+                            disabled={img.isPrimary || img._localFile}
                           >
                             {img.isPrimary ? (
                               <Star fontSize="small" color="primary" />
@@ -551,7 +549,7 @@ export default function ImageUploadModal({
                           <IconButton
                             size="small"
                             onClick={() => openReCrop(img)}
-                            disabled={img._localFile} // <-- Disable for new files
+                            disabled={img._localFile}
                           >
                             <Edit fontSize="small" />
                           </IconButton>
@@ -579,6 +577,7 @@ export default function ImageUploadModal({
         </DialogActions>
       </Dialog>
 
+      {/* Crop dialog for new uploads */}
       {showCrop && pendingSrc && (
         <CropDialog
           open={showCrop}
@@ -592,6 +591,7 @@ export default function ImageUploadModal({
         />
       )}
 
+      {/* Crop dialog for recropping existing images */}
       {reCrop && (
         <CropDialog
           open={Boolean(reCrop)}
