@@ -2,6 +2,12 @@
 import Category from "../models/Category.js";
 import Product from "../models/Product.js";
 import asyncHandler from "../utils/asyncHandler.js";
+// --- MODIFICATION: Import the ADVANCED icon/color functions ---
+import {
+  getProductIcon as getAutoIcon,
+  getProductColor as getAutoColor,
+} from "../utils/productIcons.js";
+// --- END MODIFICATION ---
 
 /**
  * Helper: Update product count for a category
@@ -12,10 +18,7 @@ export const updateCategoryProductCount = async (categoryId) => {
   try {
     const count = await Product.countDocuments({
       category: categoryId,
-      // --- MODIFICATION ---
-      // Count 'active' and 'draft' products, not just 'active'
       status: { $in: ["active", "draft"] },
-      // --- END MODIFICATION ---
     });
     await Category.findByIdAndUpdate(categoryId, { productsCount: count });
     console.log(`Updated productsCount for category ${categoryId} => ${count}`);
@@ -24,40 +27,10 @@ export const updateCategoryProductCount = async (categoryId) => {
   }
 };
 
-/** Auto icon & color based on name */
-const getAutoIcon = (name = "") => {
-  const n = String(name).toLowerCase();
-  if (n.includes("grocery")) return "🛒";
-  if (n.includes("dairy")) return "🥛";
-  if (n.includes("electronics")) return "⚡";
-  if (n.includes("vegetable") || n.includes("vegetables")) return "🥕";
-  if (n.includes("bakery") || n.includes("bread")) return "🍞";
-  if (n.includes("fruit") || n.includes("apple")) return "🍎";
-  if (n.includes("beverage") || n.includes("drink") || n.includes("juice"))
-    return "🥤";
-  if (n.includes("meat") || n.includes("chicken") || n.includes("fish"))
-    return "🍖";
-  if (n.includes("snack") || n.includes("chips")) return "🍿";
-  if (n.includes("health") || n.includes("medical")) return "💊";
-  if (n.includes("beauty") || n.includes("cosmetic")) return "💄";
-  if (n.includes("baby") || n.includes("kid")) return "👶";
-  if (n.includes("pet")) return "🐕";
-  if (n.includes("home") || n.includes("furniture")) return "🏠";
-  if (n.includes("book") || n.includes("education")) return "📚";
-  return "✨";
-};
-
-const getAutoColor = (name = "") => {
-  const n = String(name).toLowerCase();
-  if (n.includes("fruit") || n.includes("organic")) return "#4CAF50";
-  if (n.includes("bakery") || n.includes("bread")) return "#FF9800";
-  if (n.includes("beverage") || n.includes("drink")) return "#2196F3";
-  if (n.includes("meat") || n.includes("seafood")) return "#F44336";
-  if (n.includes("dairy")) return "#9C27B0";
-  if (n.includes("health") || n.includes("medical")) return "#00BCD4";
-  if (n.includes("baby") || n.includes("kid")) return "#E91E63";
-  return "#4CAF50";
-};
+// --- MODIFICATION: Removed the simple getAutoIcon and getAutoColor functions ---
+// const getAutoIcon = (name = "") => { ... }; // <-- REMOVED
+// const getAutoColor = (name = "") => { ... }; // <-- REMOVED
+// --- END MODIFICATION ---
 
 // ------ List (search/paginate/sort/filter) ------
 export const getCategories = asyncHandler(async (req, res) => {
@@ -156,8 +129,8 @@ export const createCategory = asyncHandler(async (req, res) => {
     name,
     description,
     status,
-    icon: getAutoIcon(name),
-    color: getAutoColor(name),
+    icon: getAutoIcon(name), // This will now use the advanced function
+    color: getAutoColor(name), // This will now use the advanced function
     productsCount: 0,
     slug: name
       .toLowerCase()
@@ -192,8 +165,10 @@ export const updateCategory = asyncHandler(async (req, res) => {
       e.statusCode = 409;
       throw e;
     }
-    update.icon ??= getAutoIcon(update.name);
-    update.color ??= getAutoColor(update.name);
+    // --- MODIFICATION: Automatically update icon and color on name change ---
+    update.icon = getAutoIcon(update.name);
+    update.color = getAutoColor(update.name);
+    // --- END MODIFICATION ---
     update.slug = update.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")

@@ -45,6 +45,9 @@ export const createProduct = asyncHandler(async (req, res) => {
     tags,
     features,
     status,
+    featured, // <-- ADDED
+    trending, // <-- ADDED
+    isBestOffer, // <-- ADDED
   } = req.body;
 
   // validation: category must exist
@@ -101,6 +104,9 @@ export const createProduct = asyncHandler(async (req, res) => {
     status: status || "draft",
     slug,
     totalStock: 0, // default 0
+    featured: featured === "true" || featured === true, // <-- ADDED
+    trending: trending === "true" || trending === true, // <-- ADDED
+    isBestOffer: isBestOffer === "true" || isBestOffer === true, // <-- ADDED
   });
 
   const saved = await product.save();
@@ -140,13 +146,14 @@ export const getProducts = asyncHandler(async (req, res) => {
     sortOrder = "desc",
     featured,
     trending,
+    isBestOffer, // <-- ADDED
   } = req.query;
 
   const q = { isDeleted: { $ne: true } };
   if (category) q.category = category;
   if (status) q.status = status;
 
-  // support featured and trending filters (expects "true" or "false")
+  // support featured, trending, and best offer filters
   if (typeof featured !== "undefined") {
     if (featured === "true") q.featured = true;
     else if (featured === "false") q.featured = false;
@@ -154,6 +161,11 @@ export const getProducts = asyncHandler(async (req, res) => {
   if (typeof trending !== "undefined") {
     if (trending === "true") q.trending = true;
     else if (trending === "false") q.trending = false;
+  }
+  if (typeof isBestOffer !== "undefined") {
+    // <-- ADDED
+    if (isBestOffer === "true") q.isBestOffer = true;
+    else if (isBestOffer === "false") q.isBestOffer = false;
   }
 
   if (minPrice || maxPrice) {
@@ -343,8 +355,18 @@ export const updateProduct = asyncHandler(async (req, res) => {
     "status",
     "featured",
     "trending",
+    "isBestOffer", // <-- ADDED
   ];
-  for (const k of allowed) if (update[k] !== undefined) existing[k] = update[k];
+  for (const k of allowed) {
+    if (update[k] !== undefined) {
+      // Handle boolean strings from FormData
+      if (["featured", "trending", "isBestOffer"].includes(k)) {
+        existing[k] = update[k] === "true" || update[k] === true;
+      } else {
+        existing[k] = update[k];
+      }
+    }
+  }
 
   // If name changed, update slug
   if (update.name && update.name !== existing.name) {
