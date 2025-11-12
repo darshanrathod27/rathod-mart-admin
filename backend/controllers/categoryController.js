@@ -2,12 +2,10 @@
 import Category from "../models/Category.js";
 import Product from "../models/Product.js";
 import asyncHandler from "../utils/asyncHandler.js";
-// --- MODIFICATION: Import the ADVANCED icon/color functions ---
 import {
-  getProductIcon as getAutoIcon,
-  getProductColor as getAutoColor,
-} from "../utils/productIcons.js";
-// --- END MODIFICATION ---
+  getCategoryIcon as getAutoIcon,
+  getCategoryColor as getAutoColor,
+} from "../utils/categoryIcons.js";
 
 /**
  * Helper: Update product count for a category
@@ -26,11 +24,6 @@ export const updateCategoryProductCount = async (categoryId) => {
     console.error(`Failed to update count for category ${categoryId}:`, err);
   }
 };
-
-// --- MODIFICATION: Removed the simple getAutoIcon and getAutoColor functions ---
-// const getAutoIcon = (name = "") => { ... }; // <-- REMOVED
-// const getAutoColor = (name = "") => { ... }; // <-- REMOVED
-// --- END MODIFICATION ---
 
 // ------ List (search/paginate/sort/filter) ------
 export const getCategories = asyncHandler(async (req, res) => {
@@ -105,7 +98,7 @@ export const getCategory = asyncHandler(async (req, res) => {
 
 // ------ Create ------
 export const createCategory = asyncHandler(async (req, res) => {
-  const { name, description = "", status = "Active" } = req.body;
+  const { name, description = "", status = "active" } = req.body;
 
   if (!name || typeof name !== "string" || !name.trim()) {
     const e = new Error("Category name is required");
@@ -125,17 +118,19 @@ export const createCategory = asyncHandler(async (req, res) => {
     throw e;
   }
 
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
   const cat = await Category.create({
     name,
     description,
     status,
-    icon: getAutoIcon(name), // This will now use the advanced function
-    color: getAutoColor(name), // This will now use the advanced function
+    icon: getAutoIcon(name),
+    color: getAutoColor(name),
     productsCount: 0,
-    slug: name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, ""),
+    slug,
   });
 
   res.status(201).json({ success: true, data: cat });
@@ -165,10 +160,10 @@ export const updateCategory = asyncHandler(async (req, res) => {
       e.statusCode = 409;
       throw e;
     }
-    // --- MODIFICATION: Automatically update icon and color on name change ---
+
     update.icon = getAutoIcon(update.name);
     update.color = getAutoColor(update.name);
-    // --- END MODIFICATION ---
+
     update.slug = update.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -215,18 +210,50 @@ export const deleteCategory = asyncHandler(async (req, res) => {
 export const recountAllCategories = asyncHandler(async (req, res) => {
   try {
     const categories = await Category.find({ isDeleted: false }).select("_id");
-    let count = 0;
+    let processed = 0;
     for (const cat of categories) {
       await updateCategoryProductCount(cat._id);
-      count++;
+      processed++;
     }
 
     res.json({
       success: true,
-      message: `Recalculated counts for ${count} categories.`,
+      message: `Recalculated counts for ${processed} categories.`,
     });
   } catch (err) {
     console.error("Recount error:", err);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * @desc    Fix icons and colors for all existing categories
+ * @route   GET /api/categories/admin/fix-icons
+ * @access  Admin
+ */
+export const fixCategoryIcons = asyncHandler(async (req, res) => {
+  try {
+    const categories = await Category.find({ isDeleted: false });
+    let updatedCount = 0;
+
+    for (const cat of categories) {
+      const newIcon = getAutoIcon(cat.name);
+      const newColor = getAutoColor(cat.name);
+
+      if (cat.icon !== newIcon || cat.color !== newColor) {
+        cat.icon = newIcon;
+        cat.color = newColor;
+        await cat.save();
+        updatedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Updated icons/colors for ${updatedCount} categories.`,
+    });
+  } catch (err) {
+    console.error("Fix Icons error:", err);
+    res.status(500).json({ success: false, message: "Failed to fix icons." });
   }
 });

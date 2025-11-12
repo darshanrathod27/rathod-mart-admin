@@ -1,3 +1,4 @@
+// src/pages/Categories.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import { categoryService } from "../services/categoryService";
 import {
@@ -12,13 +13,19 @@ import {
   Menu,
   MenuItem,
   Avatar,
-  Alert,
   FormControl,
   InputLabel,
   Select,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Add, Search, MoreVert, Edit, Delete } from "@mui/icons-material";
+import {
+  Add,
+  Search,
+  MoreVert,
+  Edit,
+  Delete,
+  AutoFixHigh,
+} from "@mui/icons-material";
 import { motion } from "framer-motion";
 import FormModal from "../components/Modals/FormModal";
 import CategoryForm from "../components/Forms/CategoryForm";
@@ -48,6 +55,31 @@ const Categories = () => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedRow, setSelectedRow] = useState(null);
 
+  // --- ADD NEW FUNCTION ---
+  const handleFixIcons = async () => {
+    if (
+      !window.confirm(
+        "This will update all existing category icons and colors. This is safe to run multiple times. Continue?"
+      )
+    )
+      return;
+
+    try {
+      const res = await categoryService.fixCategoryIcons();
+      // Some services return { success, message } or { message }
+      toast.success(res?.message || "Icons fixed!");
+      fetchData(); // Refresh data
+    } catch (e) {
+      // If backend returns an error object, try to surface a message
+      const errMsg =
+        e?.message ||
+        (e?.response && e.response?.data?.message) ||
+        "Failed to fix icons";
+      toast.error(errMsg);
+    }
+  };
+  // --- END NEW FUNCTION ---
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -63,7 +95,11 @@ const Categories = () => {
       setRows(Array.isArray(res?.data) ? res.data : []);
       setRowCount(res?.pagination?.total || 0);
     } catch (e) {
-      toast.error(e.message || "Failed to fetch categories");
+      const errMsg =
+        e?.message ||
+        (e?.response && e.response?.data?.message) ||
+        "Failed to fetch categories";
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -97,7 +133,11 @@ const Categories = () => {
       toast.success("Category deleted");
       fetchData();
     } catch (e) {
-      toast.error(e.message || "Delete failed");
+      const errMsg =
+        e?.message ||
+        (e?.response && e.response?.data?.message) ||
+        "Delete failed";
+      toast.error(errMsg);
     }
     handleMenuClose();
   };
@@ -114,11 +154,17 @@ const Categories = () => {
       setOpenModal(false);
       fetchData(); // refresh without reload
     } catch (e) {
-      toast.error(e.message || "Save failed");
+      const errMsg =
+        e?.message ||
+        (e?.response && e.response?.data?.message) ||
+        "Save failed";
+      toast.error(errMsg);
     }
   };
 
-  const statusColor = (s) => (s === "Active" ? "success" : "warning");
+  // make status check case-insensitive
+  const statusColor = (s) =>
+    String(s).toLowerCase() === "active" ? "success" : "warning";
 
   // DataGrid columns (robust date)
   const columns = [
@@ -160,8 +206,7 @@ const Categories = () => {
       ),
     },
     {
-      // --- MODIFICATION ---
-      // Simplified date column to fix display issue
+      // simplified date column to fix display issue
       field: "createdAt",
       headerName: "Created",
       width: 140,
@@ -169,9 +214,7 @@ const Categories = () => {
         const date = params.row.createdAt;
         return date ? new Date(date).toLocaleDateString("en-IN") : "N/A";
       },
-      // --- END MODIFICATION ---
     },
-
     {
       field: "actions",
       headerName: "Actions",
@@ -239,6 +282,18 @@ const Categories = () => {
               </FormControl>
 
               <Box sx={{ flexGrow: 1 }} />
+
+              {/* Fix Icons button (new) */}
+              <Button
+                variant="outlined"
+                startIcon={<AutoFixHigh />}
+                onClick={handleFixIcons}
+                size="medium"
+                sx={{ mr: 1 }}
+              >
+                Fix Icons
+              </Button>
+
               <Button
                 variant="contained"
                 startIcon={<Add />}

@@ -1,5 +1,5 @@
 // src/components/Forms/ProductForm.jsx
-import React, { useEffect, useState, useCallback } from "react"; // Added useCallback
+import React, { useEffect, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -18,14 +18,12 @@ import {
   FormControl,
   InputLabel,
   Select,
-  // --- NEW ---
   Grid,
   Paper,
   Card,
   CardMedia,
   CardActions,
   Tooltip,
-  // --- END NEW ---
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -38,9 +36,7 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
-// --- NEW ---
 import { useDropzone } from "react-dropzone";
-// --- END NEW ---
 import { inventoryService } from "../../services/inventoryService";
 import {
   StyledFormDialog,
@@ -117,24 +113,22 @@ export default function ProductForm({
       status: initialData?.status || "draft",
       featured: initialData?.featured || false,
       trending: initialData?.trending || false,
+      // --- CHANGE: Added isBestOffer ---
+      isBestOffer: initialData?.isBestOffer || false,
+      // --- END CHANGE ---
       tags: initialData?.tags || [],
       features: initialData?.features || [],
     },
   });
 
-  // --- MODIFICATION (Image State) ---
-  // images state now holds BOTH existing images (from initialData) and NEW files (_localFile)
   const [images, setImages] = useState(() =>
     (initialData?.images || []).map((img) => ({
-      ...img, // Keep all original properties like filename, url, etc.
+      ...img,
       id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
-      previewUrl: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl, // Use existing URL for preview
+      previewUrl: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
     }))
   );
-  // This new state tracks filenames of existing images to be deleted
   const [deleteFilenames, setDeleteFilenames] = useState([]);
-  // --- END MODIFICATION ---
-
   const [variants, setVariants] = useState([]);
   const [selectedVariant, setSelectedVariant] = useState("");
 
@@ -162,7 +156,6 @@ export default function ProductForm({
 
   useEffect(() => {
     if (initialData) {
-      // Reset form fields
       reset({
         name: initialData?.name || "",
         description: initialData?.description || "",
@@ -188,10 +181,12 @@ export default function ProductForm({
         status: initialData?.status || "draft",
         featured: initialData?.featured || false,
         trending: initialData?.trending || false,
+        // --- CHANGE: Added isBestOffer ---
+        isBestOffer: initialData?.isBestOffer || false,
+        // --- END CHANGE ---
         tags: initialData?.tags || [],
         features: initialData?.features || [],
       });
-      // Reset images state
       setImages(
         (initialData?.images || []).map((img) => ({
           ...img,
@@ -200,7 +195,6 @@ export default function ProductForm({
             img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
         }))
       );
-      // Reset deleted filenames
       setDeleteFilenames([]);
 
       const fetchVariants = async () => {
@@ -220,18 +214,17 @@ export default function ProductForm({
     }
   }, [initialData, reset, isEdit]);
 
-  // --- NEW (Dropzone Logic) ---
   const onDrop = useCallback(
     (acceptedFiles) => {
       if (!acceptedFiles || acceptedFiles.length === 0) return;
 
       const newFileObjects = acceptedFiles.map((file) => ({
         id: `${file.name}-${Date.now()}-${Math.random()}`,
-        _localFile: file, // This key is used in the submit function
-        previewUrl: URL.createObjectURL(file), // Local preview URL
+        _localFile: file,
+        previewUrl: URL.createObjectURL(file),
         alt: file.name,
         isPrimary: false,
-        filename: file.name, // filename for logic
+        filename: file.name,
       }));
 
       setImages((prevImages) => [...prevImages, ...newFileObjects]);
@@ -245,18 +238,13 @@ export default function ProductForm({
     multiple: true,
   });
 
-  // Handle removing an image from the preview
   const handleRemoveImage = (id, filename) => {
-    // If the image has a `filename` and NOT a `_localFile`, it's an *existing* image.
     const imageToRemove = images.find((img) => img.id === id);
     if (imageToRemove && imageToRemove.filename && !imageToRemove._localFile) {
-      // Add its filename to the delete list
       setDeleteFilenames((prev) => [...prev, imageToRemove.filename]);
     }
-    // Always remove it from the 'images' preview state
     setImages((prevImages) => prevImages.filter((img) => img.id !== id));
   };
-  // --- END NEW ---
 
   const addTag = (value) => {
     const v = (value || "").trim();
@@ -283,9 +271,6 @@ export default function ProductForm({
     setValue("features", arr, { shouldValidate: true });
   };
 
-  // This function is no longer needed as we manage state directly
-  // const handleImagesChange = (nextImages) => setImages(nextImages);
-
   const onKeyDown = (e) => {
     const tag = e.target?.tagName?.toLowerCase();
     if (e.key === "Enter" && tag !== "textarea") e.preventDefault();
@@ -310,6 +295,9 @@ export default function ProductForm({
     fd.append("status", vals.status || "draft");
     fd.append("featured", vals.featured ? "true" : "false");
     fd.append("trending", vals.trending ? "true" : "false");
+    // --- CHANGE: Send isBestOffer to backend ---
+    fd.append("isBestOffer", vals.isBestOffer ? "true" : "false");
+    // --- END CHANGE ---
     fd.append("tags", JSON.stringify(vals.tags || []));
     fd.append("features", JSON.stringify(vals.features || []));
 
@@ -317,37 +305,27 @@ export default function ProductForm({
       fd.append("variantId", selectedVariant);
     }
 
-    // --- MODIFICATION (Submit Logic) ---
     const existingFilenames = [];
     (images || []).forEach((img) => {
       if (img._localFile) {
-        // This is a NEW file, append it to 'images'
         fd.append(
           "images",
           img._localFile,
           img._localFile.name || `img-${Date.now()}`
         );
       } else if (img.filename) {
-        // This is an EXISTING file, add its name to keep it
         existingFilenames.push(img.filename);
       }
     });
 
-    // This logic from your original form is flawed, as it doesn't
-    // account for deletions. We will use our new deleteFilenames state.
-    // fd.append("existingFilenames", JSON.stringify(existingFilenames));
-
-    // Append the list of files to delete
     if (deleteFilenames.length > 0) {
       fd.append("deleteFilenames", JSON.stringify(deleteFilenames));
     }
-    // --- END MODIFICATION ---
 
     if (isEdit) fd.append("_id", initialData._id);
     await onSubmit(fd, { isEdit, id: initialData?._id });
   };
 
-  /* ---------------- inner form (no nested scroll) ---------------- */
   const formInner = (
     <Box sx={{ p: 3 }}>
       <Box
@@ -355,7 +333,6 @@ export default function ProductForm({
         onSubmit={handleSubmit(submit)}
         onKeyDown={onKeyDown}
       >
-        {/* Basic Information */}
         <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
           <Typography sx={sectionHeaderStyles}>
             <InfoOutlinedIcon sx={{ fontSize: 20 }} />
@@ -363,8 +340,6 @@ export default function ProductForm({
           </Typography>
 
           <Stack spacing={2} sx={{ mt: 1 }}>
-            {/* ... (Fields: Name, Category, Brand, Prices) ... */}
-            {/* All these fields remain unchanged */}
             <Controller
               name="name"
               control={control}
@@ -493,7 +468,6 @@ export default function ProductForm({
 
         <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
 
-        {/* --- MODIFICATION (Replaced ImageUploadManager with Dropzone) --- */}
         <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
           <Typography sx={sectionHeaderStyles}>
             <ImageOutlinedIcon sx={{ fontSize: 20 }} />
@@ -522,7 +496,6 @@ export default function ProductForm({
             </FormControl>
           )}
 
-          {/* Dropzone Area */}
           <Paper
             {...getRootProps()}
             sx={{
@@ -558,7 +531,6 @@ export default function ProductForm({
             )}
           </Paper>
 
-          {/* Image Preview Grid */}
           {images.length > 0 && (
             <Box sx={{ mt: 2 }}>
               <Grid container spacing={2}>
@@ -568,7 +540,7 @@ export default function ProductForm({
                       <CardMedia
                         component="img"
                         height="140"
-                        image={img.previewUrl} // Use local or remote URL
+                        image={img.previewUrl}
                         alt={img.alt || "preview"}
                         sx={{ objectFit: "cover" }}
                       />
@@ -603,11 +575,9 @@ export default function ProductForm({
             </Box>
           )}
         </Box>
-        {/* --- END MODIFICATION --- */}
 
         <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
 
-        {/* SPECS */}
         <Box sx={{ ...fieldContainerStyles }}>
           <Typography sx={sectionHeaderStyles}>
             <SettingsOutlinedIcon sx={{ fontSize: 20 }} />
@@ -615,8 +585,6 @@ export default function ProductForm({
           </Typography>
 
           <Stack spacing={2} sx={{ mt: 1 }}>
-            {/* ... (Rest of the form: descriptions, tags, features, status, etc.) ... */}
-            {/* All these fields remain unchanged */}
             <Controller
               name="shortDescription"
               control={control}
@@ -653,7 +621,6 @@ export default function ProductForm({
               )}
             />
 
-            {/* Tags */}
             <Box>
               <Typography
                 variant="body2"
@@ -699,7 +666,6 @@ export default function ProductForm({
               </Stack>
             </Box>
 
-            {/* Features */}
             <Box>
               <Typography
                 variant="body2"
@@ -791,6 +757,20 @@ export default function ProductForm({
                   />
                 )}
               />
+              {/* --- CHANGE: Added Best Offer Switch --- */}
+              <Controller
+                name="isBestOffer"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    control={
+                      <Switch {...field} checked={!!field.value} size="small" />
+                    }
+                    label="Best Offer"
+                  />
+                )}
+              />
+              {/* --- END CHANGE --- */}
             </Stack>
           </Stack>
         </Box>
@@ -798,7 +778,6 @@ export default function ProductForm({
     </Box>
   );
 
-  /* Actions - use DialogActions to match UserForm exactly */
   const actions = (
     <DialogActions sx={formActionsStyles}>
       <Button
@@ -827,7 +806,6 @@ export default function ProductForm({
     </DialogActions>
   );
 
-  /* If embedded=true (rendered inside FormModal), return only inner + actions (no extra dialog title) */
   if (embedded) {
     return (
       <>
@@ -837,7 +815,6 @@ export default function ProductForm({
     );
   }
 
-  /* Standalone dialog (unlikely used if you place ProductForm inside FormModal) */
   return (
     <StyledFormDialog
       open={open}
@@ -854,7 +831,6 @@ export default function ProductForm({
       }}
       BackdropProps={{ sx: { backgroundColor: "rgba(0,0,0,0.55)" } }}
     >
-      {/* Header style will match UserForm since formHeaderStyles is same */}
       <Box sx={{ ...formHeaderStyles }}>
         <Stack
           direction="row"

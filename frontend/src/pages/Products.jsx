@@ -60,13 +60,17 @@ export default function Products() {
   const [openVariantModal, setOpenVariantModal] = useState(false);
   const [variantProduct, setVariantProduct] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-
   const [imageModalProduct, setImageModalProduct] = useState(null);
 
-  // pagination & search
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(10);
+  // --- CHANGE: Pagination Fix ---
+  // Replaced page and pageSize states with paginationModel
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: 10,
+  });
   const [totalRows, setTotalRows] = useState(0);
+  // --- END CHANGE ---
+
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 500);
   const [filterCategory, setFilterCategory] = useState("");
@@ -74,12 +78,15 @@ export default function Products() {
   const fetchProducts = async () => {
     setLoading(true);
     try {
+      // --- CHANGE: Use paginationModel ---
       const resp = await productService.getProducts({
-        page: page + 1,
-        limit: pageSize,
+        page: paginationModel.page + 1,
+        limit: paginationModel.pageSize,
         search: debouncedSearch,
         category: filterCategory,
       });
+      // --- END CHANGE ---
+
       const rows = resp.data || [];
       const mapped = rows.map((r) => {
         const images = (r.images || []).map((img) => ({
@@ -119,9 +126,11 @@ export default function Products() {
     fetchCategories();
   }, [fetchCategories]);
 
+  // --- CHANGE: Use paginationModel in dependency array ---
   useEffect(() => {
     fetchProducts();
-  }, [page, pageSize, debouncedSearch, filterCategory]);
+  }, [paginationModel, debouncedSearch, filterCategory]);
+  // --- END CHANGE ---
 
   useEffect(() => {
     const onInv = (e) => {
@@ -129,7 +138,7 @@ export default function Products() {
     };
     window.addEventListener("inventory:updated", onInv);
     return () => window.removeEventListener("inventory:updated", onInv);
-  }, [page, pageSize, debouncedSearch, filterCategory]);
+  }, [paginationModel, debouncedSearch, filterCategory]); // Added dependencies here too
 
   const getImageUrl = (img) => {
     if (!img) return null;
@@ -161,11 +170,13 @@ export default function Products() {
       } else {
         await productService.createProduct(formData);
         toast.success("Product created successfully");
-        if (page !== 0) {
-          setPage(0);
+        // --- CHANGE: Reset to page 0 after creation ---
+        if (paginationModel.page !== 0) {
+          setPaginationModel((prev) => ({ ...prev, page: 0 }));
         } else {
           await fetchProducts();
         }
+        // --- END CHANGE ---
       }
       setOpenForm(false);
       setEditProduct(null);
@@ -231,7 +242,6 @@ export default function Products() {
     }
   };
 
-  // --- MODIFICATION (Columns Array) ---
   const columns = [
     {
       field: "images",
@@ -271,7 +281,6 @@ export default function Products() {
           (params.row.category && params.row.category.name) ||
           params.row.category ||
           "Uncategorized";
-        // REMOVED shortDesc from here
         return (
           <Box>
             <Typography
@@ -305,8 +314,6 @@ export default function Products() {
                 </Typography>
               ) : null}
             </Stack>
-
-            {/* REMOVED shortDesc Typography from here */}
           </Box>
         );
       },
@@ -319,8 +326,6 @@ export default function Products() {
         <Typography variant="body2">{p.value || "-"}</Typography>
       ),
     },
-
-    // --- REPLACED 'Category' with 'shortDescription' ---
     {
       field: "shortDescription",
       headerName: "Description",
@@ -333,10 +338,10 @@ export default function Products() {
             color="text.secondary"
             sx={{
               display: "-webkit-box",
-              WebkitLineClamp: 3, // 3 lines
+              WebkitLineClamp: 3,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
-              whiteSpace: "normal", // Allow wrapping
+              whiteSpace: "normal",
             }}
           >
             {params.value || "—"}
@@ -344,8 +349,6 @@ export default function Products() {
         </Tooltip>
       ),
     },
-    // --- END REPLACEMENT ---
-
     {
       field: "basePrice",
       headerName: "Price",
@@ -438,7 +441,6 @@ export default function Products() {
       ),
     },
   ];
-  // --- END COLUMN MODIFICATION ---
 
   return (
     <Box sx={{ p: 2 }}>
@@ -495,19 +497,16 @@ export default function Products() {
             columns={columns}
             getRowId={(r) => r._id}
             pagination
-            page={page}
-            pageSize={pageSize}
-            rowsPerPageOptions={[10, 20, 50]}
+            // --- CHANGE: Updated pagination props ---
             rowCount={totalRows}
             paginationMode="server"
-            onPageChange={(newPage) => setPage(newPage)}
-            onPageSizeChange={(newSize) => {
-              setPageSize(newSize);
-              setPage(0);
-            }}
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            pageSizeOptions={[10, 20, 50]}
+            // --- END CHANGE ---
             loading={loading}
             disableRowSelectionOnClick
-            rowHeight={110} // Keep rowHeight for the main "Product" cell
+            rowHeight={110}
             sx={{
               "& .MuiDataGrid-cell": {
                 display: "flex",
