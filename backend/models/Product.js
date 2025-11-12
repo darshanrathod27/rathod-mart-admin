@@ -52,6 +52,7 @@ const productSchema = new mongoose.Schema(
     },
     featured: { type: Boolean, default: false },
     trending: { type: Boolean, default: false },
+    isBestOffer: { type: Boolean, default: false }, // <-- ADDED THIS
     viewCount: { type: Number, default: 0 },
   },
   { timestamps: true }
