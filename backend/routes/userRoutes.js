@@ -2,22 +2,25 @@
 import express from "express";
 import { body, param, validationResult } from "express-validator";
 import { uploadProfile } from "../middleware/imageUpload.js";
-import { protect, admin } from "../middleware/authMiddleware.js"; // 1. Import middleware
+import { protect, protectAdmin, admin } from "../middleware/authMiddleware.js";
+
 import {
   createUser,
   getUsers,
   getUserById,
   updateUser,
   deleteUser,
-  loginUser, // 2. Import new controllers
+  loginUser,
   registerUser,
   logoutUser,
+  logoutAdmin,
   getUserProfile,
+  updateUserProfile,
 } from "../controllers/userController.js";
 
 const router = express.Router();
 
-// inline validate middleware (Keep as is)
+// -------------------- VALIDATION HANDLER --------------------
 const validate = (req, res, next) => {
   const result = validationResult(req);
   if (result.isEmpty()) return next();
@@ -27,7 +30,7 @@ const validate = (req, res, next) => {
   next(err);
 };
 
-// Rules (Keep as is)
+// -------------------- RULES --------------------
 const createUserRules = [
   body("name").trim().notEmpty().withMessage("Name is required"),
   body("email").isEmail().withMessage("Valid email is required"),
@@ -36,6 +39,7 @@ const createUserRules = [
   body("role").optional().isIn(["admin", "manager", "staff", "customer"]),
   body("status").optional().isIn(["active", "inactive", "blocked"]),
 ];
+
 const updateUserRules = [
   param("id").isMongoId().withMessage("Invalid user id"),
   body("name").optional().trim().notEmpty(),
@@ -48,44 +52,45 @@ const updateUserRules = [
   body("role").optional().isIn(["admin", "manager", "staff", "customer"]),
   body("status").optional().isIn(["active", "inactive", "blocked"]),
 ];
+
 const idParamRule = [param("id").isMongoId().withMessage("Invalid user id")];
 
-// --- 3. Add New Public Auth Routes ---
+// -------------------- PUBLIC AUTH ROUTES --------------------
 router.post("/login", loginUser);
-router.post("/register", registerUser); // For customer sign-up
-router.post("/logout", logoutUser); // Needs 'protect' if you only want logged-in users to logout
-router.get("/profile", protect, getUserProfile); // Get logged-in user's profile
+router.post("/register", registerUser);
+router.post("/logout", logoutUser); // Customer logout
+router.post("/admin-logout", logoutAdmin); // Admin logout
 
-// --- 4. Protect Admin Routes ---
-// list/search/paginate
-router.get("/", protect, admin, getUsers);
+// -------------------- CUSTOMER PROFILE ROUTES (Protected) --------------------
+router
+  .route("/profile")
+  .get(protect, getUserProfile)
+  .put(protect, uploadProfile, updateUserProfile);
 
-// create (accept multipart image)
-router.post(
-  "/",
-  protect,
-  admin,
-  uploadProfile,
-  createUserRules,
-  validate,
-  createUser
-);
+// -------------------- ADMIN ROUTES (Protected + Admin Only) --------------------
+router
+  .route("/")
+  .get(protectAdmin, admin, getUsers)
+  .post(
+    protectAdmin,
+    admin,
+    uploadProfile,
+    createUserRules,
+    validate,
+    createUser
+  );
 
-// read
-router.get("/:id", protect, admin, idParamRule, validate, getUserById);
-
-// update (accept multipart image)
-router.put(
-  "/:id",
-  protect,
-  admin,
-  uploadProfile,
-  updateUserRules,
-  validate,
-  updateUser
-);
-
-// delete
-router.delete("/:id", protect, admin, idParamRule, validate, deleteUser);
+router
+  .route("/:id")
+  .get(protectAdmin, admin, idParamRule, validate, getUserById)
+  .put(
+    protectAdmin,
+    admin,
+    uploadProfile,
+    updateUserRules,
+    validate,
+    updateUser
+  )
+  .delete(protectAdmin, admin, idParamRule, validate, deleteUser);
 
 export default router;

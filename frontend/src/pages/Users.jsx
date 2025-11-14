@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { getUsers, deleteUser } from "../services/userService";
 import UserForm from "../components/Forms/UserForm.jsx";
+import UserViewModal from "../components/Modals/UserViewModal.jsx"; // 1. Import new modal
 import {
   Box,
   Button,
@@ -18,14 +19,21 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Typography,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Add, Search, MoreVert, Edit, Delete } from "@mui/icons-material";
+import {
+  Add,
+  Search,
+  MoreVert,
+  Edit,
+  Delete,
+  Visibility, // 2. Import View icon
+} from "@mui/icons-material";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 
-// Same trick used in Products.jsx to make absolute image URLs
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -52,6 +60,7 @@ const Users = () => {
   const [editUser, setEditUser] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [viewUser, setViewUser] = useState(null); // 3. Add state for view modal
 
   // absolute image helper
   const getAvatarUrl = (relative) => {
@@ -108,6 +117,12 @@ const Users = () => {
     setSelectedUser(null);
   };
 
+  // 4. Add handler for View
+  const handleView = (user) => {
+    setViewUser(user);
+    handleMenuClose();
+  };
+
   const handleEdit = (user) => {
     setEditUser(user);
     setOpenForm(true);
@@ -126,7 +141,7 @@ const Users = () => {
     handleMenuClose();
   };
 
-  // ⭐ Same DataGrid feel as Categories.jsx
+  // 5. Update columns
   const columns = [
     {
       field: "avatar",
@@ -169,6 +184,7 @@ const Users = () => {
           size="small"
           variant="outlined"
           color="primary"
+          sx={{ textTransform: "capitalize" }}
         />
       ),
     },
@@ -182,20 +198,19 @@ const Users = () => {
           size="small"
           variant="filled"
           color={p.value === "active" ? "success" : "warning"}
+          sx={{ textTransform: "capitalize" }}
         />
       ),
     },
     {
-      field: "createdAt",
-      headerName: "Created",
-      width: 140,
-      type: "date",
-      // MUI v7 signature => value is value
-      valueGetter: (value) => (value ? new Date(value) : null),
-      renderCell: (params) => {
-        const v = params.value;
-        return v ? new Date(v).toLocaleDateString("en-IN") : "N/A";
-      },
+      field: "_id", // 6. Add User ID column
+      headerName: "User ID",
+      width: 240,
+      renderCell: (p) => (
+        <Typography variant="caption" sx={{ fontFamily: "monospace" }}>
+          {p.value}
+        </Typography>
+      ),
     },
     {
       field: "actions",
@@ -329,6 +344,10 @@ const Users = () => {
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
+        <MenuItem onClick={() => handleView(selectedUser)}>
+          <Visibility sx={{ mr: 1, fontSize: 20 }} />
+          View Details
+        </MenuItem>
         <MenuItem onClick={() => handleEdit(selectedUser)}>
           <Edit sx={{ mr: 1, fontSize: 20 }} />
           Edit
@@ -351,6 +370,20 @@ const Users = () => {
           onSaved={() => {
             setOpenForm(false);
             fetchUsers();
+          }}
+          embedded={false} // Use the full modal form
+        />
+      )}
+
+      {/* 7. Add the View Modal */}
+      {viewUser && (
+        <UserViewModal
+          open={Boolean(viewUser)}
+          onClose={() => setViewUser(null)}
+          user={viewUser}
+          onEdit={(user) => {
+            setViewUser(null);
+            handleEdit(user);
           }}
         />
       )}

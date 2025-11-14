@@ -6,12 +6,12 @@ import {
   removeItemFromWishlist,
   mergeWishlist,
 } from "../controllers/wishlistController.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js"; // Uses customer 'protect'
 
 const router = express.Router();
 
-// All wishlist routes are protected and require a user to be logged in
-router.use(protect);
+// All wishlist routes are protected
+router.use(protect); // <-- This now correctly refers to the customer-only middleware
 
 router.route("/").get(getWishlist);
 router.route("/add").post(addItemToWishlist);

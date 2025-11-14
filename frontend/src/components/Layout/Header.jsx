@@ -25,7 +25,6 @@ import {
   Brightness6,
 } from "@mui/icons-material";
 import { motion, useScroll, useTransform } from "framer-motion";
-// Removed useAuth as requested
 import { useDispatch } from "react-redux";
 import { logout as logoutAction } from "../../store/authSlice";
 import api from "../../services/api";
@@ -94,7 +93,10 @@ const Header = ({
   const handleLogout = async () => {
     handleClose();
     try {
-      await api.post("/users/logout"); // backend logout endpoint
+      // --- THIS IS THE FIX ---
+      await api.post("/users/admin-logout"); // Call the new admin-logout route
+      // --- END FIX ---
+
       dispatch(logoutAction()); // update redux auth state
       toast.success("Logged out successfully!");
       navigate("/login");

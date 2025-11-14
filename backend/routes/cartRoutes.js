@@ -8,12 +8,12 @@ import {
   clearCart,
   mergeCart,
 } from "../controllers/cartController.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js"; // Uses customer 'protect'
 
 const router = express.Router();
 
 // All cart routes are protected
-router.use(protect);
+router.use(protect); // <-- This now correctly refers to the customer-only middleware
 
 router.route("/").get(getCart);
 router.route("/add").post(addItemToCart);
