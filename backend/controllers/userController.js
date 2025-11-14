@@ -42,13 +42,42 @@ const SORT_ALLOW = new Set([
 ]);
 // --- END HELPER FUNCTIONS ---
 
-// @desc    Auth user & get token (Login)
+// @desc    Auth user & get token (Login) - FOR CUSTOMER APP
 // @route   POST /api/users/login
 // @access  Public
 export const loginUser = ah(async (req, res) => {
   const { email, password } = req.body;
+
+  // 1. Find user in Database
+  const dbUser = await User.findOne({ email }).select("+password");
+
+  if (dbUser && (await bcrypt.compare(password, dbUser.password))) {
+    // 2. Check user status
+    if (dbUser.status !== "active") {
+      res.status(401);
+      throw new Error(
+        "Account is inactive or blocked. Please contact support."
+      );
+    }
+
+    // 3. Generate CUSTOMER token
+    generateToken(res, dbUser._id, "jwt"); // Only sets 'jwt' cookie
+
+    const user = dbUser.toObject();
+    delete user.password; // Ensure password is not in response
+    res.json(user);
+  } else {
+    res.status(401);
+    throw new Error("Invalid email or password");
+  }
+});
+
+// @desc    Auth admin user (Login) - FOR ADMIN APP
+// @route   POST /api/users/admin-login
+// @access  Public
+export const loginAdminUser = ah(async (req, res) => {
+  const { email, password } = req.body;
   let user;
-  let cookieName = "jwt"; // Default cookie for customers
 
   // 1. Check for Super Admin from .env
   if (
@@ -62,35 +91,16 @@ export const loginUser = ah(async (req, res) => {
       role: "admin",
       status: "active",
     };
-    cookieName = "admin_jwt"; // Use admin cookie
   } else {
-    // 2. Find user in Database
-    const dbUser = await User.findOne({ email }).select("+password");
-
-    if (dbUser && (await bcrypt.compare(password, dbUser.password))) {
-      // 3. Check user status
-      if (dbUser.status !== "active") {
-        res.status(401);
-        throw new Error(
-          "Account is inactive or blocked. Please contact support."
-        );
-      }
-      user = dbUser.toObject(); // Convert to plain object
-      // 4. Set cookie name based on role
-      if (user.role === "admin" || user.role === "manager") {
-        cookieName = "admin_jwt";
-      }
-    }
+    // 2. If not super admin, fail. We are NOT checking the database.
+    res.status(401);
+    throw new Error("Invalid admin email or password");
   }
 
-  // 5. If user is valid, generate token
+  // 3. If user is valid, generate ADMIN token
   if (user) {
-    generateToken(res, user._id, cookieName);
-    delete user.password; // Ensure password is not in response
+    generateToken(res, user._id, "admin_jwt"); // Only sets 'admin_jwt' cookie
     res.json(user);
-  } else {
-    res.status(401);
-    throw new Error("Invalid email or password");
   }
 });
 
@@ -139,7 +149,6 @@ export const registerUser = ah(async (req, res) => {
 // @access  Public
 export const logoutUser = ah(async (req, res) => {
   res.cookie("jwt", "", {
-    // --- FIX: Only clears 'jwt'
     httpOnly: true,
     expires: new Date(0),
   });
@@ -151,18 +160,18 @@ export const logoutUser = ah(async (req, res) => {
 // @access  Public
 export const logoutAdmin = ah(async (req, res) => {
   res.cookie("admin_jwt", "", {
-    // --- FIX: Only clears 'admin_jwt'
     httpOnly: true,
     expires: new Date(0),
   });
   res.status(200).json({ message: "Admin logged out" });
 });
 
-// @desc    Get user profile (for logged-in user)
-// @route   GET /api/users/profile
-// @access  Private (Customer)
+// @desc    Get user profile (for logged-in user, customer or admin)
+// @route   GET /api/users/profile (customer)
+// @route   GET /api/users/admin-profile (admin)
+// @access  Private (Customer) / Private (Admin)
 export const getUserProfile = ah(async (req, res) => {
-  // req.user is populated by 'protect' middleware
+  // req.user is populated by either 'protect' or 'protectAdmin' middleware
   if (req.user) {
     res.json(req.user); // Send full user object
   } else {
@@ -171,7 +180,7 @@ export const getUserProfile = ah(async (req, res) => {
   }
 });
 
-// @desc    Update user profile (for logged-in user)
+// @desc    Update user profile (for logged-in customer)
 // @route   PUT /api/users/profile
 // @access  Private (Customer)
 export const updateUserProfile = ah(async (req, res) => {

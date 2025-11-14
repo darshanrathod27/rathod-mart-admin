@@ -42,21 +42,17 @@ const Login = () => {
     setError("");
 
     try {
-      // 7. REPLACE useAuth logic with API call
-      const res = await api.post("/users/login", {
-        email: formData.userId, // Assuming userId is the email
+      // 7. *** CHANGED: Call admin-login endpoint ***
+      const res = await api.post("/users/admin-login", {
+        email: formData.userId,
         password: formData.password,
       });
 
-      // 8. Check if user is an admin or manager
-      if (res.data.role === "admin" || res.data.role === "manager") {
-        dispatch(setCredentials(res.data)); // 9. Dispatch user info to Redux
-        toast.success("Welcome back, Admin!");
-        navigate("/");
-      } else {
-        setError("Access Denied. You are not an Admin or Manager.");
-        toast.error("Access Denied.");
-      }
+      // 8. Super admin check is now handled by backend
+      // We just dispatch credentials on success
+      dispatch(setCredentials(res.data)); // 9. Dispatch user info to Redux
+      toast.success("Welcome back, Admin!");
+      navigate("/");
     } catch (err) {
       // 10. Handle errors from the API
       const msg = err.response?.data?.message || err.message || "Login failed.";

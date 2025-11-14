@@ -16,9 +16,8 @@ export const checkAuthStatus = createAsyncThunk(
   "auth/checkAuthStatus",
   async (_, { rejectWithValue }) => {
     try {
-      // This route is now protected by *either* 'protect' or 'protectAdmin'
-      // on the backend, so it will work for an admin cookie.
-      const res = await api.get("/users/profile"); // <-- This is the only 'res' declaration
+      // *** CHANGED: Call admin-profile endpoint ***
+      const res = await api.get("/users/admin-profile");
 
       // Check if the user is an admin or manager
       if (res.data.role === "admin" || res.data.role === "manager") {
