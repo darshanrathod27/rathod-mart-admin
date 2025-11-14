@@ -2,7 +2,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import api from "../services/api"; // Import your api instance
 
-// Check localStorage for existing user info
+// Check localStorage for admin-specific user info
 const initialState = {
   userInfo: localStorage.getItem("adminUserInfo")
     ? JSON.parse(localStorage.getItem("adminUserInfo"))
@@ -11,16 +11,21 @@ const initialState = {
   status: "idle", // 'idle' | 'loading' | 'succeeded' | 'failed'
 };
 
-// NEW: Async thunk to check auth status using the httpOnly cookie
+// Async thunk to check auth status using the httpOnly cookie
 export const checkAuthStatus = createAsyncThunk(
   "auth/checkAuthStatus",
   async (_, { rejectWithValue }) => {
     try {
-      // This endpoint is protected by 'protect' middleware on the backend
-      const res = await api.get("/users/profile");
-      return res.data; // This will be the user payload if successful
+      // This route is now protected by *either* 'protect' or 'protectAdmin'
+      // on the backend, so it will work for an admin cookie.
+      const res = await api.get("/users/profile"); // <-- This is the only 'res' declaration
+
+      // Check if the user is an admin or manager
+      if (res.data.role === "admin" || res.data.role === "manager") {
+        return res.data;
+      }
+      return rejectWithValue("Not an admin or manager");
     } catch (err) {
-      // If cookie is invalid or missing, backend returns 401
       return rejectWithValue(err.response?.data?.message || "Auth failed");
     }
   }
@@ -45,7 +50,7 @@ const authSlice = createSlice({
       localStorage.removeItem("adminUserInfo");
     },
   },
-  // NEW: Handle the thunk's lifecycle
+  // Handle the thunk's lifecycle
   extraReducers: (builder) => {
     builder
       .addCase(checkAuthStatus.pending, (state) => {

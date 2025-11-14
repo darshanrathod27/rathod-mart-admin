@@ -15,6 +15,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Grid,
+  Divider,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SaveIcon from "@mui/icons-material/Save";
@@ -23,6 +25,7 @@ import CameraAltIcon from "@mui/icons-material/CameraAlt";
 import PersonIcon from "@mui/icons-material/Person";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import HomeIcon from "@mui/icons-material/Home";
 import { useForm, Controller } from "react-hook-form";
 import { useDropzone } from "react-dropzone";
 import {
@@ -35,40 +38,72 @@ import {
   submitButtonStyles,
   sectionHeaderStyles,
 } from "../../theme/FormStyles";
+import { createUser, updateUser } from "../../services/userService";
+import toast from "react-hot-toast";
 
 export default function UserForm({
   open = true,
   initialData,
-  onSubmit,
   onClose,
+  onSaved,
   embedded = false,
 }) {
   const isEdit = Boolean(initialData);
+
+  // Format date for input type=date (YYYY-MM-DD)
+  const formatDateForInput = (date) => {
+    if (!date) return "";
+    try {
+      return new Date(date).toISOString().split("T")[0];
+    } catch {
+      return "";
+    }
+  };
+
   const { register, control, handleSubmit, reset } = useForm({
     defaultValues: {
       name: initialData?.name || "",
+      username: initialData?.username || "",
       email: initialData?.email || "",
       phone: initialData?.phone || "",
+      birthday: formatDateForInput(initialData?.birthday),
       role: initialData?.role || "customer",
       status: initialData?.status || "active",
       password: "",
+      address: {
+        street: initialData?.address?.street || "",
+        city: initialData?.address?.city || "",
+        state: initialData?.address?.state || "",
+        postalCode: initialData?.address?.postalCode || "",
+        country: initialData?.address?.country || "India",
+      },
     },
   });
+
+  const [preview, setPreview] = useState(initialData?.profileImage || null);
+  const [fileBlob, setFileBlob] = useState(null);
 
   useEffect(() => {
     reset({
       name: initialData?.name || "",
+      username: initialData?.username || "",
       email: initialData?.email || "",
       phone: initialData?.phone || "",
+      birthday: formatDateForInput(initialData?.birthday),
       role: initialData?.role || "customer",
       status: initialData?.status || "active",
       password: "",
+      address: {
+        street: initialData?.address?.street || "",
+        city: initialData?.address?.city || "",
+        state: initialData?.address?.state || "",
+        postalCode: initialData?.address?.postalCode || "",
+        country: initialData?.address?.country || "India",
+      },
     });
-    if (initialData?.profileImage) setPreview(initialData.profileImage);
+    setPreview(initialData?.profileImage || null);
+    setFileBlob(null);
   }, [initialData, reset]);
-
-  const [preview, setPreview] = useState(initialData?.profileImage || null);
-  const [fileBlob, setFileBlob] = useState(null);
 
   const onDrop = useCallback((acceptedFiles) => {
     if (!acceptedFiles?.[0]) return;
@@ -88,19 +123,55 @@ export default function UserForm({
     setFileBlob(null);
   };
 
-  const internalSubmit = (values) => {
-    onSubmit?.({ ...values, file: fileBlob || null });
+  const internalSubmit = async (values) => {
+    const fd = new FormData();
+
+    // Append all top-level values
+    fd.append("name", values.name);
+    fd.append("email", values.email);
+    fd.append("role", values.role);
+    fd.append("status", values.status);
+    if (values.username) fd.append("username", values.username);
+    if (values.phone) fd.append("phone", values.phone);
+    if (values.birthday) fd.append("birthday", values.birthday);
+    if (values.password) fd.append("password", values.password);
+
+    // Append nested address fields
+    if (values.address) {
+      fd.append("address[street]", values.address.street || "");
+      fd.append("address[city]", values.address.city || "");
+      fd.append("address[state]", values.address.state || "");
+      fd.append("address[postalCode]", values.address.postalCode || "");
+      fd.append("address[country]", values.address.country || "");
+    }
+
+    if (fileBlob) {
+      fd.append("image", fileBlob); // 'image' is the field name from middleware
+    }
+
+    try {
+      if (isEdit) {
+        await updateUser(initialData._id, fd);
+        toast.success("User updated successfully");
+      } else {
+        await createUser(fd);
+        toast.success("User created successfully");
+      }
+      onSaved?.(); // Call the onSaved prop
+    } catch (e) {
+      toast.error(e.message || "Operation failed");
+    }
   };
 
   const inner = (
     <Box sx={{ p: 3 }}>
       <Box component="form" onSubmit={handleSubmit(internalSubmit)}>
+        {/* --- Profile Picture Section --- */}
         <Box sx={{ ...fieldContainerStyles, mb: "24px" }}>
           <Typography sx={sectionHeaderStyles}>
             <CameraAltIcon sx={{ fontSize: 20 }} />
             Profile Picture
           </Typography>
-
           <Box
             {...getRootProps()}
             sx={{
@@ -207,84 +278,169 @@ export default function UserForm({
           </Box>
         </Box>
 
-        <Box sx={fieldContainerStyles}>
-          <TextField
-            label="Full Name"
-            placeholder="Enter full name"
-            {...register("name")}
-            fullWidth
-            sx={textFieldStyles}
-          />
-        </Box>
-
-        <Box sx={fieldContainerStyles}>
-          <TextField
-            label="Email Address"
-            type="email"
-            placeholder="user@example.com"
-            {...register("email")}
-            fullWidth
-            sx={textFieldStyles}
-          />
-        </Box>
-
-        <Box sx={fieldContainerStyles}>
-          <TextField
-            label="Phone Number"
-            placeholder="+91 99999 99999"
-            {...register("phone")}
-            fullWidth
-            sx={textFieldStyles}
-          />
-        </Box>
-
-        <Box sx={fieldContainerStyles}>
-          <FormControl fullWidth size="medium" sx={textFieldStyles}>
-            <InputLabel id="role-label">User Role</InputLabel>
-            <Controller
-              name="role"
-              control={control}
-              render={({ field }) => (
-                <Select labelId="role-label" label="User Role" {...field}>
-                  <MenuItem value="admin">Admin</MenuItem>
-                  <MenuItem value="manager">Manager</MenuItem>
-                  <MenuItem value="customer">Customer</MenuItem>
-                </Select>
-              )}
+        {/* --- Personal Details Section --- */}
+        <Typography sx={sectionHeaderStyles}>
+          <PersonIcon sx={{ fontSize: 20 }} />
+          Personal Details
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Full Name"
+              placeholder="Enter full name"
+              {...register("name")}
+              fullWidth
+              sx={textFieldStyles}
             />
-          </FormControl>
-        </Box>
-
-        <Box sx={fieldContainerStyles}>
-          <FormControl fullWidth size="medium" sx={textFieldStyles}>
-            <InputLabel id="status-label">Status</InputLabel>
-            <Controller
-              name="status"
-              control={control}
-              render={({ field }) => (
-                <Select labelId="status-label" label="Status" {...field}>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                </Select>
-              )}
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Username"
+              placeholder="e.g. @darshan"
+              {...register("username")}
+              fullWidth
+              sx={textFieldStyles}
             />
-          </FormControl>
-        </Box>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Email Address"
+              type="email"
+              placeholder="user@example.com"
+              {...register("email")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Phone Number"
+              placeholder="+91 99999 99999"
+              {...register("phone")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Birthday"
+              type="date"
+              {...register("birthday")}
+              fullWidth
+              sx={textFieldStyles}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+        </Grid>
 
-        <Box sx={fieldContainerStyles}>
-          <TextField
-            label={
-              isEdit ? "Password (Leave blank to keep current)" : "Password"
-            }
-            type="password"
-            placeholder={
-              isEdit ? "Leave blank to keep current" : "Enter password"
-            }
-            {...register("password")}
-            fullWidth
-            sx={textFieldStyles}
-          />
-        </Box>
+        <Divider sx={{ my: 2 }} />
+
+        {/* --- Address Section --- */}
+        <Typography sx={sectionHeaderStyles}>
+          <HomeIcon sx={{ fontSize: 20 }} />
+          Address
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={12}>
+            <TextField
+              label="Street Address"
+              placeholder="123 Main St"
+              {...register("address.street")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="City"
+              placeholder="Surat"
+              {...register("address.city")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="State"
+              placeholder="Gujarat"
+              {...register("address.state")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Postal Code"
+              placeholder="395001"
+              {...register("address.postalCode")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Country"
+              placeholder="India"
+              {...register("address.country")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+        </Grid>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* --- Access & Security --- */}
+        <Typography sx={sectionHeaderStyles}>Access & Security</Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth size="medium" sx={textFieldStyles}>
+              <InputLabel id="role-label">User Role</InputLabel>
+              <Controller
+                name="role"
+                control={control}
+                render={({ field }) => (
+                  <Select labelId="role-label" label="User Role" {...field}>
+                    <MenuItem value="admin">Admin</MenuItem>
+                    <MenuItem value="manager">Manager</MenuItem>
+                    <MenuItem value="staff">Staff</MenuItem>
+                    <MenuItem value="customer">Customer</MenuItem>
+                  </Select>
+                )}
+              />
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth size="medium" sx={textFieldStyles}>
+              <InputLabel id="status-label">Status</InputLabel>
+              <Controller
+                name="status"
+                control={control}
+                render={({ field }) => (
+                  <Select labelId="status-label" label="Status" {...field}>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="inactive">Inactive</MenuItem>
+                    <MenuItem value="blocked">Blocked</MenuItem>
+                  </Select>
+                )}
+              />
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label={
+                isEdit ? "Password (Leave blank to keep current)" : "Password"
+              }
+              type="password"
+              placeholder={
+                isEdit ? "Leave blank to keep current" : "Enter password"
+              }
+              {...register("password")}
+              fullWidth
+              sx={textFieldStyles}
+            />
+          </Grid>
+        </Grid>
       </Box>
     </Box>
   );

@@ -10,7 +10,7 @@ const ah = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "profile");
 
-// --- HELPER FUNCTIONS (Keep these as they are) ---
+// --- HELPER FUNCTIONS (No changes) ---
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const makeFilename = (prefix = "profile") =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
@@ -47,19 +47,47 @@ const SORT_ALLOW = new Set([
 // @access  Public
 export const loginUser = ah(async (req, res) => {
   const { email, password } = req.body;
+  let user;
+  let cookieName = "jwt"; // Default cookie for customers
 
-  const user = await User.findOne({ email }).select("+password");
+  // 1. Check for Super Admin from .env
+  if (
+    email === process.env.ADMIN_EMAIL &&
+    password === process.env.ADMIN_PASSWORD
+  ) {
+    user = {
+      _id: "SUPER_ADMIN_ID", // Mock ID
+      name: "Super Admin",
+      email: process.env.ADMIN_EMAIL,
+      role: "admin",
+      status: "active",
+    };
+    cookieName = "admin_jwt"; // Use admin cookie
+  } else {
+    // 2. Find user in Database
+    const dbUser = await User.findOne({ email }).select("+password");
 
-  if (user && (await bcrypt.compare(password, user.password))) {
-    generateToken(res, user._id);
+    if (dbUser && (await bcrypt.compare(password, dbUser.password))) {
+      // 3. Check user status
+      if (dbUser.status !== "active") {
+        res.status(401);
+        throw new Error(
+          "Account is inactive or blocked. Please contact support."
+        );
+      }
+      user = dbUser.toObject(); // Convert to plain object
+      // 4. Set cookie name based on role
+      if (user.role === "admin" || user.role === "manager") {
+        cookieName = "admin_jwt";
+      }
+    }
+  }
 
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      profileImage: user.profileImage,
-    });
+  // 5. If user is valid, generate token
+  if (user) {
+    generateToken(res, user._id, cookieName);
+    delete user.password; // Ensure password is not in response
+    res.json(user);
   } else {
     res.status(401);
     throw new Error("Invalid email or password");
@@ -70,7 +98,7 @@ export const loginUser = ah(async (req, res) => {
 // @route   POST /api/users/register
 // @access  Public
 export const registerUser = ah(async (req, res) => {
-  const { name, email, password, phone } = req.body;
+  const { name, email, password } = req.body; // Only these fields
 
   if (!name || !email || !password) {
     res.status(400);
@@ -83,18 +111,17 @@ export const registerUser = ah(async (req, res) => {
     throw new Error("User already exists");
   }
 
-  // Public registration defaults to 'customer'
+  // Public registration defaults to 'customer' and 'active'
   const user = await User.create({
     name,
     email,
     password,
-    phone: phone || "",
     role: "customer",
-    status: "active",
+    status: "active", // Auto-active on register
   });
 
   if (user) {
-    generateToken(res, user._id);
+    generateToken(res, user._id, "jwt"); // Use customer cookie
     res.status(201).json({
       _id: user._id,
       name: user.name,
@@ -107,57 +134,151 @@ export const registerUser = ah(async (req, res) => {
   }
 });
 
-// @desc    Logout user / clear cookie
+// @desc    Logout customer / clear cookie
 // @route   POST /api/users/logout
-// @access  Private (must be logged in to log out)
+// @access  Public
 export const logoutUser = ah(async (req, res) => {
   res.cookie("jwt", "", {
+    // --- FIX: Only clears 'jwt'
     httpOnly: true,
     expires: new Date(0),
   });
-  res.status(200).json({ message: "Logged out successfully" });
+  res.status(200).json({ message: "Customer logged out" });
 });
 
-// @desc    Get user profile
+// @desc    Logout admin / clear cookie
+// @route   POST /api/users/admin-logout
+// @access  Public
+export const logoutAdmin = ah(async (req, res) => {
+  res.cookie("admin_jwt", "", {
+    // --- FIX: Only clears 'admin_jwt'
+    httpOnly: true,
+    expires: new Date(0),
+  });
+  res.status(200).json({ message: "Admin logged out" });
+});
+
+// @desc    Get user profile (for logged-in user)
 // @route   GET /api/users/profile
-// @access  Private
+// @access  Private (Customer)
 export const getUserProfile = ah(async (req, res) => {
-  // req.user is set by the 'protect' middleware
-  const user = await User.findById(req.user._id);
-  if (user) {
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      profileImage: user.profileImage,
-    });
+  // req.user is populated by 'protect' middleware
+  if (req.user) {
+    res.json(req.user); // Send full user object
   } else {
     res.status(404);
     throw new Error("User not found");
   }
 });
 
-// --- YOUR EXISTING ADMIN FUNCTIONS ---
-// (These will now be protected by 'admin' middleware in userRoutes.js)
+// @desc    Update user profile (for logged-in user)
+// @route   PUT /api/users/profile
+// @access  Private (Customer)
+export const updateUserProfile = ah(async (req, res) => {
+  // Super Admin can't be updated this way
+  if (req.user._id === "SUPER_ADMIN_ID") {
+    res.status(403);
+    throw new Error("Super Admin profile cannot be modified from the app.");
+  }
 
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  const { name, username, phone, birthday, password, address } = req.body;
+
+  // Check if username is taken
+  if (username && username !== user.username) {
+    const exists = await User.findOne({
+      username,
+      _id: { $ne: user._id },
+    });
+    if (exists) {
+      res.status(409);
+      throw new Error("Username is already taken");
+    }
+    user.username = username;
+  }
+
+  // Update fields
+  user.name = name || user.name;
+  user.phone = phone !== undefined ? phone : user.phone;
+  user.birthday = birthday || user.birthday;
+
+  // Update address
+  if (address) {
+    user.address = {
+      street: address.street || user.address?.street,
+      city: address.city || user.address?.city,
+      state: address.state || user.address?.state,
+      postalCode: address.postalCode || user.address?.postalCode,
+      country: address.country || user.address?.country,
+    };
+  }
+
+  if (password) {
+    user.password = password; // Pre-save hook will hash it
+  }
+
+  // Handle new profile image
+  if (req.file) {
+    if (user.profileImage) {
+      await removeFileByUrl(user.profileImage);
+    }
+    const filename = makeFilename(`profile-${user._id}`);
+    user.profileImage = await saveBufferAsJpeg(req.file.buffer, filename, 300);
+  }
+
+  const updatedUser = await user.save();
+  res.json(updatedUser);
+});
+
+// --- ADMIN FUNCTIONS ---
+
+// @desc    Create user (by Admin)
+// @route   POST /api/users
+// @access  Admin
 export const createUser = ah(async (req, res) => {
   const {
     name,
     email,
     password,
     phone = "",
+    username,
+    birthday,
     role = "customer",
     status = "active",
+    address,
   } = req.body;
+
   const exists = await User.findOne({ email });
   if (exists) {
     const e = new Error("Email already in use");
     e.statusCode = 409;
     throw e;
   }
+  if (username) {
+    const uExists = await User.findOne({ username });
+    if (uExists) {
+      const e = new Error("Username already in use");
+      e.statusCode = 409;
+      throw e;
+    }
+  }
 
-  const payload = { name, email, password, phone, role, status };
+  const payload = {
+    name,
+    email,
+    password,
+    phone,
+    username,
+    birthday,
+    role,
+    status,
+    address,
+  };
 
   if (req.file) {
     const filename = makeFilename("profile");
@@ -172,6 +293,9 @@ export const createUser = ah(async (req, res) => {
   res.status(201).json({ success: true, data: user });
 });
 
+// @desc    Get all users (by Admin)
+// @route   GET /api/users
+// @access  Admin
 export const getUsers = ah(async (req, res) => {
   const {
     page = 1,
@@ -188,13 +312,11 @@ export const getUsers = ah(async (req, res) => {
   const l = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
 
   const filter = {};
+
   if (q) {
-    filter.$or = [
-      { $text: { $search: q } },
-      { name: { $regex: q, $options: "i" } },
-      { email: { $regex: q, $options: "i" } },
-    ];
+    filter.$text = { $search: q };
   }
+
   if (role) filter.role = role;
   if (status) filter.status = status;
   if (dateFrom || dateTo) {
@@ -220,6 +342,9 @@ export const getUsers = ah(async (req, res) => {
   });
 });
 
+// @desc    Get user by ID (by Admin)
+// @route   GET /api/users/:id
+// @access  Admin
 export const getUserById = ah(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) {
@@ -230,6 +355,9 @@ export const getUserById = ah(async (req, res) => {
   res.json({ success: true, data: user });
 });
 
+// @desc    Update user (by Admin)
+// @route   PUT /api/users/:id
+// @access  Admin
 export const updateUser = ah(async (req, res) => {
   const { id } = req.params;
   const update = { ...req.body };
@@ -246,9 +374,52 @@ export const updateUser = ah(async (req, res) => {
     }
   }
 
+  if (update.username) {
+    const exists = await User.findOne({
+      username: update.username,
+      _id: { $ne: id },
+    });
+    if (exists) {
+      const e = new Error("Username already in use");
+      e.statusCode = 409;
+      throw e;
+    }
+  }
+
   if (update.password) {
     const salt = await bcrypt.genSalt(12);
     update.password = await bcrypt.hash(update.password, salt);
+  } else {
+    delete update.password; // Don't update password if blank
+  }
+
+  // Handle address update
+  if (update.address) {
+    const user = await User.findById(id);
+    user.address = {
+      street:
+        update.address.street !== undefined
+          ? update.address.street
+          : user.address?.street,
+      city:
+        update.address.city !== undefined
+          ? update.address.city
+          : user.address?.city,
+      state:
+        update.address.state !== undefined
+          ? update.address.state
+          : user.address?.state,
+      postalCode:
+        update.address.postalCode !== undefined
+          ? update.address.postalCode
+          : user.address?.postalCode,
+      country:
+        update.address.country !== undefined
+          ? update.address.country
+          : user.address?.country,
+    };
+    await user.save();
+    delete update.address; // Remove from main update object
   }
 
   // handle new image
@@ -276,6 +447,9 @@ export const updateUser = ah(async (req, res) => {
   res.json({ success: true, data: user });
 });
 
+// @desc    Delete user (by Admin)
+// @route   DELETE /api/users/:id
+// @access  Admin
 export const deleteUser = ah(async (req, res) => {
   const user = await User.findByIdAndDelete(req.params.id);
   if (!user) {
