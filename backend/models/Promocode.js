@@ -5,7 +5,7 @@ const promocodeSchema = new mongoose.Schema(
   {
     code: {
       type: String,
-      required: [true, "Promocode is required"],
+      required: true,
       unique: true,
       trim: true,
       uppercase: true,
@@ -17,43 +17,43 @@ const promocodeSchema = new mongoose.Schema(
     discountType: {
       type: String,
       enum: ["Percentage", "Fixed"],
-      required: [true, "Discount type is required"],
+      required: true,
     },
     discountValue: {
       type: Number,
-      required: [true, "Discount value is required"],
-      min: 0,
+      required: true,
     },
     minPurchase: {
       type: Number,
       default: 0,
     },
+    // For "Percentage" type, max discount amount
     maxDiscount: {
-      type: Number, // Only applicable for 'Percentage' type
+      type: Number,
+    },
+    // Total number of times this code can be used
+    maxUses: {
+      type: Number,
+      default: 1,
+    },
+    // How many times this code has been used
+    useCount: {
+      type: Number,
+      default: 0,
     },
     expiresAt: {
       type: Date,
     },
+    // FIX: Changed from isActive (Boolean) to status (String)
+    // to match your frontend form
     status: {
       type: String,
       enum: ["Active", "Inactive"],
       default: "Active",
       index: true,
     },
-    uses: {
-      type: Number,
-      default: 0,
-    },
-    maxUses: {
-      type: Number,
-    },
-    isDeleted: { type: Boolean, default: false, index: true },
-    deletedAt: { type: Date },
   },
   { timestamps: true }
 );
-
-promocodeSchema.index({ code: 1, status: 1, expiresAt: 1 });
-promocodeSchema.index({ isDeleted: 1 });
 
 export default mongoose.model("Promocode", promocodeSchema);

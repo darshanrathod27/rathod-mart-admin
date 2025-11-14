@@ -25,7 +25,8 @@ import {
   Inventory2,
   AdminPanelSettings,
   TrendingUp,
-  LocalOffer, // 1. Import Promocode Icon
+  // --- 1. ADD THIS IMPORT ---
+  LocalOffer,
 } from "@mui/icons-material";
 
 const menuItems = [
@@ -35,11 +36,16 @@ const menuItems = [
   { text: "Size Mapping", icon: AspectRatio, path: "/product-size-mapping" },
   { text: "Color Mapping", icon: Palette, path: "/product-color-mapping" },
   { text: "Variant Master", icon: ViewInAr, path: "/variant-master" },
-  { text: "Promocodes", icon: LocalOffer, path: "/promocodes" }, // 2. Add Promocode item
   {
     text: "Inventory Master",
     icon: Inventory2,
     path: "/inventory",
+  },
+  // --- 2. ADD THIS NEW MENU ITEM ---
+  {
+    text: "Promocodes",
+    icon: LocalOffer,
+    path: "/promocodes",
   },
 ];
 
@@ -189,7 +195,7 @@ const Sidebar = ({
               component={motion.div}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }} // Made animation faster
             >
               <ListItemButton
                 selected={isActive}

@@ -24,16 +24,28 @@ import {
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 
+// Schema remains the same
 const schema = yup.object({
   code: yup.string().trim().uppercase().required("Code is required"),
   description: yup.string().trim().optional(),
   discountType: yup.string().oneOf(["Percentage", "Fixed"]).required(),
   discountValue: yup.number().typeError("Must be a number").min(0).required(),
   minPurchase: yup.number().typeError("Must be a number").min(0).default(0),
-  maxDiscount: yup.number().typeError("Must be a number").min(0).nullable(),
+  maxDiscount: yup
+    .number()
+    .typeError("Must be a number")
+    .min(0)
+    .nullable()
+    .transform((value, originalValue) =>
+      String(originalValue).trim() === "" ? null : value
+    ),
   expiresAt: yup.string().nullable(),
   status: yup.string().oneOf(["Active", "Inactive"]).required(),
-  maxUses: yup.number().typeError("Must be a number").min(0).nullable(),
+  maxUses: yup
+    .number()
+    .typeError("Must be a number")
+    .min(1, "Must be at least 1")
+    .required("Max uses is required"),
 });
 
 const formatDateForInput = (date) => {
@@ -67,7 +79,7 @@ export default function PromocodeForm({
       maxDiscount: initialData?.maxDiscount || "",
       expiresAt: formatDateForInput(initialData?.expiresAt),
       status: initialData?.status || "Active",
-      maxUses: initialData?.maxUses || "",
+      maxUses: initialData?.maxUses || 1,
     },
   });
 
@@ -77,8 +89,10 @@ export default function PromocodeForm({
     <Box>
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Box sx={{ p: 3 }}>
+          {/* --- GRID LAYOUT UPDATED --- */}
           <Grid container spacing={2.5}>
-            <Grid item xs={12} md={7}>
+            {/* Each item is now xs={12} to be full-width */}
+            <Grid item xs={12}>
               <Controller
                 name="code"
                 control={control}
@@ -98,7 +112,7 @@ export default function PromocodeForm({
                 )}
               />
             </Grid>
-            <Grid item xs={12} md={5}>
+            <Grid item xs={12}>
               <Controller
                 name="status"
                 control={control}
@@ -129,7 +143,7 @@ export default function PromocodeForm({
                 )}
               />
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12}>
               <Controller
                 name="discountType"
                 control={control}
@@ -144,7 +158,7 @@ export default function PromocodeForm({
                 )}
               />
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12}>
               <Controller
                 name="discountValue"
                 control={control}
@@ -170,7 +184,7 @@ export default function PromocodeForm({
               />
             </Grid>
             {discountType === "Percentage" && (
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12}>
                 <Controller
                   name="maxDiscount"
                   control={control}
@@ -193,7 +207,7 @@ export default function PromocodeForm({
                 />
               </Grid>
             )}
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12}>
               <Controller
                 name="minPurchase"
                 control={control}
@@ -215,24 +229,27 @@ export default function PromocodeForm({
                 )}
               />
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12}>
               <Controller
                 name="maxUses"
                 control={control}
                 render={({ field }) => (
                   <TextField
                     {...field}
-                    label="Max Total Uses (Optional)"
+                    label="Max Total Uses"
                     fullWidth
+                    required
                     type="number"
                     sx={textFieldStyles}
                     error={!!errors.maxUses}
-                    helperText="Total uses for this code"
+                    helperText={
+                      errors.maxUses?.message || "Total uses for this code"
+                    }
                   />
                 )}
               />
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12}>
               <Controller
                 name="expiresAt"
                 control={control}

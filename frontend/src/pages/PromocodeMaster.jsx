@@ -193,9 +193,10 @@ const PromocodeMaster = () => {
       renderCell: (p) => fmtCurrency(p.value),
     },
     {
-      field: "uses",
-      headerName: "Uses",
-      width: 120,
+      // FIX: Changed field to 'useCount' to match backend model
+      field: "useCount",
+      headerName: "Uses (Used/Max)",
+      width: 140,
       renderCell: (p) => (
         <Typography variant="body2">
           {p.value || 0}

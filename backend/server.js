@@ -61,7 +61,7 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/promocodes", promocodeRoutes); // 2. Use Promocode routes
 
-// global error handler
+// --- ADDED: Global error handler ---
 app.use((err, req, res, next) => {
   console.error(err);
   const statusCode = err.statusCode || 500;
@@ -72,7 +72,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404
+// --- ADDED: 404 handler ---
 app.use((req, res) => {
   res
     .status(404)
