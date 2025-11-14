@@ -1,3 +1,4 @@
+// frontend/src/components/Layout/Layout.jsx
 import React, { useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Box, useTheme, useMediaQuery, Toolbar } from "@mui/material";
@@ -13,9 +14,10 @@ import {
   Palette,
   ViewInAr,
   Inventory2,
+  LocalOffer, // 1. Import icon
 } from "@mui/icons-material";
 
-// FIXED: Added configurations for all pages
+// 2. Add config for promocodes
 const pageConfig = {
   "/users": {
     title: "Users Management",
@@ -52,7 +54,13 @@ const pageConfig = {
     subtitle: "Track stock movements and manage inventory levels",
     icon: Inventory2,
   },
+  "/promocodes": {
+    title: "Promocode Master",
+    subtitle: "Create and manage discount codes for customers",
+    icon: LocalOffer,
+  },
 };
+// --- END CHANGE ---
 
 const Layout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);

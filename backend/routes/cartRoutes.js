@@ -7,6 +7,7 @@ import {
   removeItemFromCart,
   clearCart,
   mergeCart,
+  validatePromocode, // 1. Import new controller
 } from "../controllers/cartController.js";
 import { protect } from "../middleware/authMiddleware.js"; // Uses customer 'protect'
 
@@ -21,5 +22,6 @@ router.route("/update").post(updateItemQuantity);
 router.route("/remove").post(removeItemFromCart);
 router.route("/clear").post(clearCart);
 router.route("/merge").post(mergeCart);
+router.route("/validate-promo").post(validatePromocode); // 2. Add new route
 
 export default router;

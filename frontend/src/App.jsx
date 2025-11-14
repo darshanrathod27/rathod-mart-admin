@@ -21,6 +21,7 @@ import ProductSizeMapping from "./pages/ProductSizeMapping";
 import ProductColorMapping from "./pages/ProductColorMapping";
 import VariantMaster from "./pages/VariantMaster";
 import InventoryMaster from "./pages/InventoryMaster";
+import PromocodeMaster from "./pages/PromocodeMaster"; // 1. Import Promocode page
 
 // Protected Route Component
 function ProtectedRoute({ children }) {
@@ -85,6 +86,8 @@ function App() {
             />
             <Route path="variant-master" element={<VariantMaster />} />
             <Route path="inventory" element={<InventoryMaster />} />
+            <Route path="promocodes" element={<PromocodeMaster />} />{" "}
+            {/* 2. Add route */}
           </Route>
 
           {/* Catch all - redirect to login */}
