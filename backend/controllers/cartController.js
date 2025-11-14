@@ -3,6 +3,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 import VariantMaster from "../models/VariantMaster.js";
+import Promocode from "../models/Promocode.js"; // 1. Import Promocode model
 import mongoose from "mongoose";
 
 // Helper to get all cart items populated
@@ -11,12 +12,12 @@ const getPopulatedCart = (userId) => {
     {
       path: "items.product",
       model: "Product",
-      select: "name basePrice discountPrice images", // Select fields you need
+      select: "name basePrice discountPrice images",
     },
     {
       path: "items.variant",
       model: "VariantMaster",
-      select: "size color price", // Select fields you need
+      select: "size color price",
       populate: [
         { path: "size", select: "sizeName value" },
         { path: "color", select: "colorName value" },
@@ -226,4 +227,48 @@ export const mergeCart = asyncHandler(async (req, res) => {
   await cart.save();
   const populatedCart = await getPopulatedCart(userId);
   res.json({ success: true, data: populatedCart.items });
+});
+
+// 2. ADD NEW FUNCTION
+/**
+ * @desc    Validate a promocode
+ * @route   POST /api/cart/validate-promo
+ * @access  Private
+ */
+export const validatePromocode = asyncHandler(async (req, res) => {
+  const { code } = req.body;
+  if (!code) {
+    res.status(400);
+    throw new Error("Promocode is required");
+  }
+
+  const promo = await Promocode.findOne({
+    code: String(code).toUpperCase(),
+    isDeleted: false,
+  });
+
+  if (!promo) {
+    res.status(404);
+    throw new Error("Promocode not found");
+  }
+
+  if (promo.status !== "Active") {
+    res.status(400);
+    throw new Error("This code is not active");
+  }
+
+  if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) {
+    res.status(400);
+    throw new Error("This code has expired");
+  }
+
+  if (promo.maxUses && promo.uses >= promo.maxUses) {
+    res.status(400);
+    throw new Error("This code has reached its usage limit");
+  }
+
+  // Note: We don't increment `uses` here.
+  // We do that *after* an order is successfully placed.
+  // For now, we just validate it's usable.
+  res.json({ success: true, data: promo });
 });

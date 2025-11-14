@@ -17,7 +17,8 @@ import variantMasterRoutes from "./routes/variantMasterRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
-import cartRoutes from "./routes/cartRoutes.js"; // 1. Import Cart routes
+import cartRoutes from "./routes/cartRoutes.js";
+import promocodeRoutes from "./routes/promocodeRoutes.js"; // 1. Import Promocode routes
 
 dotenv.config();
 connectDB();
@@ -57,7 +58,8 @@ app.use("/api/variant-master", variantMasterRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/wishlist", wishlistRoutes);
-app.use("/api/cart", cartRoutes); // 2. Use Cart routes
+app.use("/api/cart", cartRoutes);
+app.use("/api/promocodes", promocodeRoutes); // 2. Use Promocode routes
 
 // global error handler
 app.use((err, req, res, next) => {

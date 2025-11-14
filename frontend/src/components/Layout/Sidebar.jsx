@@ -1,3 +1,4 @@
+// frontend/src/components/Layout/Sidebar.jsx
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -24,6 +25,7 @@ import {
   Inventory2,
   AdminPanelSettings,
   TrendingUp,
+  LocalOffer, // 1. Import Promocode Icon
 } from "@mui/icons-material";
 
 const menuItems = [
@@ -33,6 +35,7 @@ const menuItems = [
   { text: "Size Mapping", icon: AspectRatio, path: "/product-size-mapping" },
   { text: "Color Mapping", icon: Palette, path: "/product-color-mapping" },
   { text: "Variant Master", icon: ViewInAr, path: "/variant-master" },
+  { text: "Promocodes", icon: LocalOffer, path: "/promocodes" }, // 2. Add Promocode item
   {
     text: "Inventory Master",
     icon: Inventory2,
