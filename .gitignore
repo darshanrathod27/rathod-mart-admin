@@ -1,0 +1,43 @@
+﻿# Node Modules
+node_modules/
+**/node_modules/
+
+# Build
+dist/
+build/
+out/
+.vite/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+!.vscode/extensions.json
+.idea/
+
+# ENV (you want to UPLOAD .env)
+!.env
+*.env.local
+*.env.*.local
+
+# Uploads (ignore only IMAGES)
+**/uploads/product/*
+**/uploads/profile/*
+
+!**/uploads/product/.gitkeep
+!**/uploads/profile/.gitkeep
+
+# Lockfiles
+package-lock.json
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*

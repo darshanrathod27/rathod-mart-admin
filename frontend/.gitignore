@@ -1,0 +1,27 @@
+# ===== ADMIN FRONTEND .gitignore =====
+
+node_modules/
+dist/
+build/
+.vite/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env (track .env)
+!.env
+*.env.local
+*.env.*.local
+
+# Locks
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/

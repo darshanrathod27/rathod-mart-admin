@@ -1,0 +1,28 @@
+# ===== ADMIN BACKEND .gitignore =====
+
+node_modules/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads (ignore files only)
+uploads/product/*
+uploads/profile/*
+!uploads/product/.gitkeep
+!uploads/profile/.gitkeep
+
+# Lock file
+package-lock.json
+
+# Env (track .env)
+!.env
+*.env.local
+*.env.*.local
+
+# System
+.DS_Store
+.vscode/
