@@ -4,7 +4,7 @@ import {
   validatePromocode,
   createPromocode,
   getAllPromocodes,
-  getPromocode, // 1. Import getPromocode
+  getPromocode,
   updatePromocode,
   deletePromocode,
 } from "../controllers/promocodeController.js";
@@ -22,7 +22,7 @@ router.route("/").post(createPromocode).get(getAllPromocodes);
 
 router
   .route("/:id")
-  .get(getPromocode) // 2. Add GET route
+  .get(getPromocode)
   .put(updatePromocode)
   .delete(deletePromocode);
 

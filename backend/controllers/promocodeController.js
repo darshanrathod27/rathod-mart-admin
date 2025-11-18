@@ -4,6 +4,24 @@ import Promocode from "../models/Promocode.js";
 import Cart from "../models/Cart.js"; // To check against cart total
 
 /**
+ * @desc    Get available active promocodes for customers
+ * @route   GET /api/promocodes/available
+ * @access  Public
+ */
+export const getAvailablePromocodes = asyncHandler(async (req, res) => {
+  const promos = await Promocode.find({
+    status: "Active",
+    expiresAt: { $gt: new Date() },
+    // Optional: Add logic to hide fully used codes
+  })
+    .select("code description discountType discountValue minPurchase")
+    .limit(5)
+    .lean();
+
+  res.json({ success: true, data: promos });
+});
+
+/**
  * @desc    Validate a promocode for a user
  * @route   POST /api/promocodes/validate
  * @access  Private (Customer)
@@ -19,7 +37,7 @@ export const validatePromocode = asyncHandler(async (req, res) => {
   // 1. Find the code
   const promo = await Promocode.findOne({
     code: code.toUpperCase(),
-    status: "Active", // Use status string
+    status: "Active",
   });
 
   if (!promo) {
@@ -31,17 +49,22 @@ export const validatePromocode = asyncHandler(async (req, res) => {
     throwObject("Promocode has expired", 400);
   }
 
-  // 3. Check usage limit
-  if (promo.useCount >= promo.maxUses) {
-    throwObject("Promocode has reached its usage limit", 400);
+  // 3. Check usage limit (global uses)
+  if (typeof promo.maxUses === "number" && promo.maxUses > 0) {
+    if ((promo.useCount || 0) >= promo.maxUses) {
+      throwObject("Promocode has reached its usage limit", 400);
+    }
   }
 
   // 4. Check against cart total (minPurchase)
   const cart = await Cart.findOne({ user: userId });
   const subtotal =
-    cart?.items.reduce((acc, item) => acc + item.price * item.quantity, 0) || 0;
+    cart?.items?.reduce(
+      (acc, item) => acc + (item.price || 0) * (item.quantity || 0),
+      0
+    ) || 0;
 
-  if (subtotal < promo.minPurchase) {
+  if (typeof promo.minPurchase === "number" && subtotal < promo.minPurchase) {
     throwObject(`Minimum purchase of ₹${promo.minPurchase} required`, 400);
   }
 
@@ -52,8 +75,6 @@ export const validatePromocode = asyncHandler(async (req, res) => {
     data: promo,
   });
 });
-
-// --- ADMIN FUNCTIONS ---
 
 /**
  * @desc    Create a new promocode
@@ -73,6 +94,10 @@ export const createPromocode = asyncHandler(async (req, res) => {
     status,
   } = req.body;
 
+  if (!code || !discountType || typeof discountValue === "undefined") {
+    throwObject("code, discountType and discountValue are required", 400);
+  }
+
   const promoExists = await Promocode.findOne({ code: code.toUpperCase() });
   if (promoExists) {
     throwObject("Promocode already exists", 400);
@@ -83,9 +108,10 @@ export const createPromocode = asyncHandler(async (req, res) => {
     description,
     discountType,
     discountValue,
-    minPurchase,
-    maxDiscount: discountType === "Percentage" ? maxDiscount : null,
-    maxUses: maxUses || 1,
+    minPurchase: minPurchase || 0,
+    maxDiscount: discountType === "Percentage" ? maxDiscount || null : null,
+    maxUses: maxUses || 0,
+    useCount: 0,
     expiresAt: expiresAt || null,
     status: status || "Active",
   });
@@ -173,16 +199,19 @@ export const updatePromocode = asyncHandler(async (req, res) => {
     status,
   } = req.body;
 
-  // Update fields
-  promo.code = code.toUpperCase() || promo.code;
-  promo.description = description || promo.description;
-  promo.discountType = discountType || promo.discountType;
-  promo.discountValue = discountValue || promo.discountValue;
-  promo.minPurchase = minPurchase ?? promo.minPurchase;
-  promo.maxDiscount = discountType === "Percentage" ? maxDiscount : null;
-  promo.maxUses = maxUses || promo.maxUses;
-  promo.expiresAt = expiresAt || promo.expiresAt;
-  promo.status = status || promo.status;
+  // Update fields (only when provided)
+  if (code) promo.code = String(code).toUpperCase();
+  if (typeof description !== "undefined") promo.description = description;
+  if (typeof discountType !== "undefined") promo.discountType = discountType;
+  if (typeof discountValue !== "undefined") promo.discountValue = discountValue;
+  promo.minPurchase =
+    typeof minPurchase !== "undefined" ? minPurchase : promo.minPurchase;
+  promo.maxDiscount =
+    discountType === "Percentage" ? maxDiscount ?? promo.maxDiscount : null;
+  promo.maxUses = typeof maxUses !== "undefined" ? maxUses : promo.maxUses;
+  promo.expiresAt =
+    typeof expiresAt !== "undefined" ? expiresAt : promo.expiresAt;
+  promo.status = typeof status !== "undefined" ? status : promo.status;
 
   const updatedPromo = await promo.save();
   res.json({ success: true, data: updatedPromo });
@@ -199,12 +228,12 @@ export const deletePromocode = asyncHandler(async (req, res) => {
     throwObject("Promocode not found", 404);
   }
 
-  await promo.deleteOne(); // Use deleteOne() or remove()
+  await promo.deleteOne();
   res.json({ success: true, message: "Promocode deleted" });
 });
 
-// Helper
-const throwObject = (message, statusCode) => {
+// Helper to throw errors with status
+const throwObject = (message, statusCode = 400) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   throw error;

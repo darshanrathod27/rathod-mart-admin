@@ -18,7 +18,7 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
-import promocodeRoutes from "./routes/promocodeRoutes.js"; // 1. Import Promocode routes
+import promocodeRoutes from "./routes/promocodeRoutes.js"; // <--- Ensure this imports the correct file
 
 dotenv.config();
 connectDB();
@@ -44,11 +44,8 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // basic routes
 app.get("/health", (req, res) => res.json({ success: true, time: new Date() }));
-app.get("/api/test", (req, res) =>
-  res.json({ success: true, message: "API ok" })
-);
 
-// API
+// API Routes
 app.use("/api/users", userRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
@@ -59,9 +56,9 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/cart", cartRoutes);
-app.use("/api/promocodes", promocodeRoutes); // 2. Use Promocode routes
+app.use("/api/promocodes", promocodeRoutes); // <--- Ensure this variable is 'promocodeRoutes'
 
-// --- ADDED: Global error handler ---
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err);
   const statusCode = err.statusCode || 500;
@@ -72,7 +69,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// --- ADDED: 404 handler ---
 app.use((req, res) => {
   res
     .status(404)
