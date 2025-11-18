@@ -46,5 +46,6 @@ backend/uploads/products/*
 backend/uploads/product/*
 backend/uploads/profile/*
 !backend/uploads/product/.gitkeep
+!backend/uploads/products/.gitkeep
 !backend/uploads/profile/.gitkeep
 ### end auto-generated ###
