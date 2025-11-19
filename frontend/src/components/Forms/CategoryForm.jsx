@@ -1,7 +1,6 @@
+// src/components/Forms/CategoryForm.jsx
 import React from "react";
 import { useForm, Controller } from "react-hook-form";
-import { yupResolver } from "@hookform/resolvers/yup";
-import * as yup from "yup";
 import {
   DialogTitle,
   DialogContent,
@@ -18,7 +17,7 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SaveIcon from "@mui/icons-material/Save";
-import CategoryIcon from "@mui/icons-material/Category"; // Restored your icon
+import CategoryIcon from "@mui/icons-material/Category";
 import {
   StyledFormDialog,
   formHeaderStyles,
@@ -28,15 +27,6 @@ import {
   cancelButtonStyles,
   submitButtonStyles,
 } from "../../theme/FormStyles";
-
-const schema = yup.object({
-  name: yup.string().trim().required("Category Name is required"),
-  description: yup.string().trim().required("Description is required"),
-  status: yup
-    .string()
-    .oneOf(["Active", "Inactive"])
-    .required("Status is required"),
-});
 
 export default function CategoryForm({
   open = true,
@@ -48,12 +38,7 @@ export default function CategoryForm({
 }) {
   const handleClose = onCancel || onClose;
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm({
-    resolver: yupResolver(schema),
+  const { control, handleSubmit } = useForm({
     defaultValues: {
       name: initialData?.name || "",
       description: initialData?.description || "",
@@ -61,9 +46,11 @@ export default function CategoryForm({
     },
   });
 
+  const submit = (vals) => onSubmit?.(vals);
+
   const inner = (
     <Box sx={{ p: 3 }}>
-      <Box component="form" onSubmit={handleSubmit(onSubmit)}>
+      <Box component="form" onSubmit={handleSubmit(submit)}>
         <Box sx={fieldContainerStyles}>
           <Controller
             name="name"
@@ -72,9 +59,8 @@ export default function CategoryForm({
               <TextField
                 {...field}
                 label="Category Name"
+                required
                 fullWidth
-                error={!!errors.name}
-                helperText={errors.name?.message}
                 sx={textFieldStyles}
               />
             )}
@@ -92,8 +78,6 @@ export default function CategoryForm({
                 multiline
                 rows={4}
                 fullWidth
-                error={!!errors.description}
-                helperText={errors.description?.message}
                 sx={textFieldStyles}
               />
             )}
@@ -101,13 +85,13 @@ export default function CategoryForm({
         </Box>
 
         <Box sx={fieldContainerStyles}>
-          <FormControl fullWidth sx={textFieldStyles}>
-            <InputLabel>Status</InputLabel>
+          <FormControl fullWidth size="medium" sx={textFieldStyles}>
+            <InputLabel id="cat-status-label">Status</InputLabel>
             <Controller
               name="status"
               control={control}
               render={({ field }) => (
-                <Select {...field} label="Status">
+                <Select labelId="cat-status-label" label="Status" {...field}>
                   <MenuItem value="Active">Active</MenuItem>
                   <MenuItem value="Inactive">Inactive</MenuItem>
                 </Select>
@@ -125,24 +109,24 @@ export default function CategoryForm({
         Cancel
       </Button>
       <Button
-        onClick={handleSubmit(onSubmit)}
+        onClick={handleSubmit(submit)}
         variant="contained"
         startIcon={<SaveIcon />}
         sx={submitButtonStyles}
-        disabled={isSubmitting}
       >
         {initialData ? "Update Category" : "Create Category"}
       </Button>
     </DialogActions>
   );
 
-  if (embedded)
+  if (embedded) {
     return (
       <>
         {inner}
         {actions}
       </>
     );
+  }
 
   return (
     <StyledFormDialog
@@ -150,24 +134,46 @@ export default function CategoryForm({
       onClose={handleClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{ sx: { bgcolor: "#fff", borderRadius: 2 } }}
+      PaperProps={{
+        sx: {
+          bgcolor: "#fff",
+          borderRadius: 2,
+          overflow: "hidden",
+          boxShadow: "0 12px 48px rgba(76, 175, 80, 0.25)",
+        },
+      }}
+      BackdropProps={{ sx: { backgroundColor: "rgba(0,0,0,0.55)" } }}
     >
       <DialogTitle
         sx={{
           ...formHeaderStyles,
           color: "#ffffff",
+          position: "relative",
+          zIndex: 1,
+          m: 0,
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <CategoryIcon sx={{ fontSize: 26, color: "#fff" }} />
-          <Typography variant="h6" sx={{ fontWeight: 700, color: "#fff" }}>
+          <Typography
+            variant="h6"
+            sx={{ fontWeight: 700, fontSize: "20px", color: "#fff" }}
+          >
             {initialData ? "Edit Category" : "Add New Category"}
           </Typography>
         </Box>
-        <IconButton onClick={handleClose} sx={{ color: "#ffffff" }}>
+        <IconButton
+          onClick={handleClose}
+          sx={{
+            color: "#ffffff",
+            "&:hover": { backgroundColor: "rgba(255,255,255,0.12)" },
+          }}
+          aria-label="close"
+        >
           <CloseIcon />
         </IconButton>
       </DialogTitle>
+
       <DialogContent sx={{ p: 0, bgcolor: "#fff" }}>{inner}</DialogContent>
       {actions}
     </StyledFormDialog>

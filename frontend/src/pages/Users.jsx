@@ -1,8 +1,9 @@
 // frontend/src/pages/Users.jsx
+
 import React, { useState, useEffect, useCallback } from "react";
 import { getUsers, deleteUser } from "../services/userService";
 import UserForm from "../components/Forms/UserForm.jsx";
-import UserViewModal from "../components/Modals/UserViewModal.jsx"; // 1. Import new modal
+import UserViewModal from "../components/Modals/UserViewModal.jsx";
 import {
   Box,
   Button,
@@ -15,11 +16,11 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Alert,
   FormControl,
   InputLabel,
   Select,
   Typography,
+  Stack,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -28,7 +29,9 @@ import {
   MoreVert,
   Edit,
   Delete,
-  Visibility, // 2. Import View icon
+  Visibility,
+  FilterList,
+  Clear,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
@@ -38,31 +41,39 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const Users = () => {
-  // table data
+  // Table data
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rowCount, setRowCount] = useState(0);
 
-  // server pagination (same as Categories.jsx style)
+  // Server pagination
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
 
-  // filters
+  // ✅ ADVANCED SEARCH - Searches name, email, phone, username
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterRole, setFilterRole] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 500);
 
-  // form & menu
+  // Filters
+  const [filterRole, setFilterRole] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Sorting
+  const [sortModel, setSortModel] = useState([
+    { field: "createdAt", sort: "desc" },
+  ]);
+
+  // Form & Menu
   const [openForm, setOpenForm] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [viewUser, setViewUser] = useState(null); // 3. Add state for view modal
+  const [viewUser, setViewUser] = useState(null);
 
-  // absolute image helper
+  // Avatar helper
   const getAvatarUrl = (relative) => {
     if (!relative) return null;
     return relative.startsWith("http")
@@ -70,20 +81,23 @@ const Users = () => {
       : `${API_BASE_URL}${relative}`;
   };
 
+  // ✅ Fetch Users with Advanced Search
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getUsers({
+      const params = {
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        q: debouncedSearch,
+        search: debouncedSearch, // ✅ Searches name, email, phone, username
         role: filterRole,
         status: filterStatus,
-        sortBy: "createdAt",
-        sortOrder: "desc",
-      });
+        sortBy: sortModel[0]?.field || "createdAt",
+        sortOrder: sortModel[0]?.sort || "desc",
+      };
 
-      // normalize rows + absolute avatar url
+      const res = await getUsers(params);
+
+      // Normalize rows with absolute avatar URL
       const list = (res?.data || []).map((u) => ({
         ...u,
         _avatarUrl: getAvatarUrl(u.profileImage),
@@ -92,15 +106,24 @@ const Users = () => {
       setUsers(list);
       setRowCount(res?.pagination?.total || 0);
     } catch (e) {
+      console.error("Fetch users error:", e);
       toast.error(e.message || "Failed to load users");
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, debouncedSearch, filterRole, filterStatus]);
+  }, [paginationModel, debouncedSearch, filterRole, filterStatus, sortModel]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  // ✅ Clear All Filters
+  const handleClearFilters = () => {
+    setSearchTerm("");
+    setFilterRole("");
+    setFilterStatus("");
+    setPaginationModel({ page: 0, pageSize: 10 });
+  };
 
   const handleAdd = () => {
     setEditUser(null);
@@ -117,7 +140,6 @@ const Users = () => {
     setSelectedUser(null);
   };
 
-  // 4. Add handler for View
   const handleView = (user) => {
     setViewUser(user);
     handleMenuClose();
@@ -130,18 +152,20 @@ const Users = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this user?")) return;
+    if (!window.confirm("Delete this user? This action cannot be undone."))
+      return;
     try {
       await deleteUser(id);
-      toast.success("User deleted");
+      toast.success("User deleted successfully");
       fetchUsers();
     } catch (e) {
+      console.error("Delete error:", e);
       toast.error(e.message || "Delete failed");
     }
     handleMenuClose();
   };
 
-  // 5. Update columns
+  // ✅ DataGrid Columns
   const columns = [
     {
       field: "avatar",
@@ -151,8 +175,9 @@ const Users = () => {
       filterable: false,
       renderCell: (params) => (
         <Avatar
-          src={params.row._avatarUrl || undefined}
-          sx={{ width: 40, height: 40, bgcolor: "grey.200" }}
+          src={params.row._avatarUrl}
+          alt={params.row.name}
+          sx={{ width: 40, height: 40 }}
         >
           {!params.row._avatarUrl ? "👤" : null}
         </Avatar>
@@ -161,29 +186,40 @@ const Users = () => {
     {
       field: "name",
       headerName: "Name",
-      width: 220,
+      width: 200,
+      renderCell: (p) => (
+        <Typography variant="body2" fontWeight={600}>
+          {p.value}
+        </Typography>
+      ),
     },
     {
       field: "email",
       headerName: "Email",
-      width: 260,
+      width: 240,
+      renderCell: (p) => (
+        <Typography variant="body2" color="text.secondary">
+          {p.value}
+        </Typography>
+      ),
     },
     {
       field: "phone",
       headerName: "Phone",
-      width: 150,
-      renderCell: (p) => p.value || "—",
+      width: 140,
+      renderCell: (p) => (
+        <Typography variant="body2">{p.value || "—"}</Typography>
+      ),
     },
     {
       field: "role",
       headerName: "Role",
-      width: 130,
+      width: 120,
       renderCell: (p) => (
         <Chip
-          label={p.value || "customer"}
+          label={p.value}
+          color={p.value === "admin" ? "primary" : "default"}
           size="small"
-          variant="outlined"
-          color="primary"
           sx={{ textTransform: "capitalize" }}
         />
       ),
@@ -192,25 +228,43 @@ const Users = () => {
       field: "status",
       headerName: "Status",
       width: 120,
-      renderCell: (p) => (
-        <Chip
-          label={p.value}
-          size="small"
-          variant="filled"
-          color={p.value === "active" ? "success" : "warning"}
-          sx={{ textTransform: "capitalize" }}
-        />
-      ),
+      renderCell: (p) => {
+        const colorMap = {
+          active: "success",
+          inactive: "warning",
+          blocked: "error",
+        };
+        return (
+          <Chip
+            label={p.value}
+            color={colorMap[p.value?.toLowerCase()] || "default"}
+            size="small"
+            sx={{ textTransform: "capitalize" }}
+          />
+        );
+      },
     },
     {
-      field: "_id", // 6. Add User ID column
-      headerName: "User ID",
-      width: 240,
-      renderCell: (p) => (
-        <Typography variant="caption" sx={{ fontFamily: "monospace" }}>
-          {p.value}
-        </Typography>
-      ),
+      field: "createdAt",
+      headerName: "Created",
+      width: 150,
+      renderCell: (params) => {
+        const date = params.row.createdAt;
+        if (!date) return <Typography variant="caption">—</Typography>;
+        try {
+          return (
+            <Typography variant="caption">
+              {new Date(date).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </Typography>
+          );
+        } catch {
+          return <Typography variant="caption">—</Typography>;
+        }
+      },
     },
     {
       field: "actions",
@@ -230,164 +284,203 @@ const Users = () => {
   ];
 
   return (
-    <Box>
-      {/* Top filter card — same layout as Categories */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.1 }}
-      >
-        <Card sx={{ mb: 3 }}>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <Box sx={{ p: 3 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            mb: 3,
+          }}
+        >
+          <Typography variant="h4" fontWeight="bold">
+            Users Management
+          </Typography>
+          <Button variant="contained" startIcon={<Add />} onClick={handleAdd}>
+            Add User
+          </Button>
+        </Box>
+
+        {/* Search and Filters Card */}
+        <Card sx={{ mb: 2 }}>
           <CardContent>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                flexWrap: "wrap",
-              }}
-            >
-              <TextField
-                placeholder="Search users..."
-                variant="outlined"
-                size="small"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Search color="action" />
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ flexGrow: 1, minWidth: 250 }}
-              />
+            <Stack spacing={2}>
+              {/* Search Bar - Searches name, email, phone, username */}
+              <Stack direction="row" spacing={2} alignItems="center">
+                <TextField
+                  placeholder="Search by name, email, phone, or username..."
+                  size="small"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search />
+                      </InputAdornment>
+                    ),
+                    endAdornment: searchTerm && (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={() => setSearchTerm("")}
+                        >
+                          <Clear />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ flexGrow: 1, minWidth: 250 }}
+                />
 
-              <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel>Role</InputLabel>
-                <Select
-                  value={filterRole}
-                  label="Role"
-                  onChange={(e) => setFilterRole(e.target.value)}
+                <Button
+                  variant="outlined"
+                  startIcon={<FilterList />}
+                  onClick={() => setShowFilters(!showFilters)}
+                  size="small"
                 >
-                  <MenuItem value="">
-                    <em>All</em>
-                  </MenuItem>
-                  <MenuItem value="admin">Admin</MenuItem>
-                  <MenuItem value="manager">Manager</MenuItem>
-                  <MenuItem value="staff">Staff</MenuItem>
-                  <MenuItem value="customer">Customer</MenuItem>
-                </Select>
-              </FormControl>
+                  {showFilters ? "Hide" : "Show"} Filters
+                </Button>
+              </Stack>
 
-              <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={filterStatus}
-                  label="Status"
-                  onChange={(e) => setFilterStatus(e.target.value)}
+              {/* Clear Filters Button */}
+              {(searchTerm || filterRole || filterStatus) && (
+                <Button
+                  variant="text"
+                  startIcon={<Clear />}
+                  onClick={handleClearFilters}
+                  size="small"
+                  sx={{ alignSelf: "flex-start" }}
                 >
-                  <MenuItem value="">
-                    <em>All</em>
-                  </MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                  <MenuItem value="blocked">Blocked</MenuItem>
-                </Select>
-              </FormControl>
+                  Clear All Filters
+                </Button>
+              )}
 
-              <Box sx={{ flexGrow: 1 }} />
-              <Button
-                variant="contained"
-                startIcon={<Add />}
-                onClick={handleAdd}
-              >
-                Add User
-              </Button>
-            </Box>
+              {/* Filter Options */}
+              {showFilters && (
+                <Stack direction="row" spacing={2}>
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Role</InputLabel>
+                    <Select
+                      value={filterRole}
+                      label="Role"
+                      onChange={(e) => setFilterRole(e.target.value)}
+                    >
+                      <MenuItem value="">All Roles</MenuItem>
+                      <MenuItem value="admin">Admin</MenuItem>
+                      <MenuItem value="manager">Manager</MenuItem>
+                      <MenuItem value="staff">Staff</MenuItem>
+                      <MenuItem value="customer">Customer</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel>Status</InputLabel>
+                    <Select
+                      value={filterStatus}
+                      label="Status"
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                    >
+                      <MenuItem value="">All Status</MenuItem>
+                      <MenuItem value="active">Active</MenuItem>
+                      <MenuItem value="inactive">Inactive</MenuItem>
+                      <MenuItem value="blocked">Blocked</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Stack>
+              )}
+            </Stack>
           </CardContent>
         </Card>
-      </motion.div>
 
-      {/* Data grid card — same styling as Categories */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.2 }}
-      >
+        {/* DataGrid Card */}
         <Card>
-          <Box sx={{ height: 631, width: "100%" }}>
+          <Box sx={{ width: "100%" }}>
             <DataGrid
               rows={users}
               columns={columns}
               getRowId={(row) => row._id}
-              loading={loading}
               rowCount={rowCount}
-              pageSizeOptions={[10, 20, 50]}
+              loading={loading}
+              pagination
+              paginationMode="server"
               paginationModel={paginationModel}
               onPaginationModelChange={setPaginationModel}
-              paginationMode="server"
+              pageSizeOptions={[10, 20, 50]}
+              sortingMode="server"
+              sortModel={sortModel}
+              onSortModelChange={setSortModel}
+              disableRowSelectionOnClick
+              autoHeight
               sx={{
                 border: "none",
                 "& .MuiDataGrid-columnHeaders": {
                   backgroundColor: "rgba(76, 175, 80, 0.05)",
                 },
+                "& .MuiDataGrid-cell": {
+                  display: "flex",
+                  alignItems: "center",
+                },
               }}
             />
           </Box>
         </Card>
-      </motion.div>
 
-      {/* Context menu */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleMenuClose}
-      >
-        <MenuItem onClick={() => handleView(selectedUser)}>
-          <Visibility sx={{ mr: 1, fontSize: 20 }} />
-          View Details
-        </MenuItem>
-        <MenuItem onClick={() => handleEdit(selectedUser)}>
-          <Edit sx={{ mr: 1, fontSize: 20 }} />
-          Edit
-        </MenuItem>
-        <MenuItem
-          onClick={() => selectedUser && handleDelete(selectedUser._id)}
-          sx={{ color: "error.main" }}
+        {/* Context Menu */}
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleMenuClose}
         >
-          <Delete sx={{ mr: 1, fontSize: 20 }} />
-          Delete
-        </MenuItem>
-      </Menu>
+          <MenuItem onClick={() => handleView(selectedUser)}>
+            <Visibility sx={{ mr: 1 }} fontSize="small" />
+            View Details
+          </MenuItem>
+          <MenuItem onClick={() => handleEdit(selectedUser)}>
+            <Edit sx={{ mr: 1 }} fontSize="small" />
+            Edit
+          </MenuItem>
+          <MenuItem
+            onClick={() => selectedUser && handleDelete(selectedUser._id)}
+            sx={{ color: "error.main" }}
+          >
+            <Delete sx={{ mr: 1 }} fontSize="small" />
+            Delete
+          </MenuItem>
+        </Menu>
 
-      {/* Form modal re-use */}
-      {openForm && (
-        <UserForm
-          open={openForm}
-          onClose={() => setOpenForm(false)}
-          initialData={editUser}
-          onSaved={() => {
-            setOpenForm(false);
-            fetchUsers();
-          }}
-          embedded={false} // Use the full modal form
-        />
-      )}
+        {/* User Form Modal */}
+        {openForm && (
+          <UserForm
+            open={openForm}
+            onClose={() => setOpenForm(false)}
+            initialData={editUser}
+            onSaved={() => {
+              setOpenForm(false);
+              fetchUsers();
+            }}
+            embedded={false}
+          />
+        )}
 
-      {/* 7. Add the View Modal */}
-      {viewUser && (
-        <UserViewModal
-          open={Boolean(viewUser)}
-          onClose={() => setViewUser(null)}
-          user={viewUser}
-          onEdit={(user) => {
-            setViewUser(null);
-            handleEdit(user);
-          }}
-        />
-      )}
-    </Box>
+        {/* User View Modal */}
+        {viewUser && (
+          <UserViewModal
+            open={Boolean(viewUser)}
+            onClose={() => setViewUser(null)}
+            user={viewUser}
+            onEdit={(user) => {
+              setViewUser(null);
+              handleEdit(user);
+            }}
+          />
+        )}
+      </Box>
+    </motion.div>
   );
 };
 

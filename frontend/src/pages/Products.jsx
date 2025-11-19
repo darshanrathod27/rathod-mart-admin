@@ -1,4 +1,5 @@
-// src/pages/Products.jsx
+// frontend/src/pages/Products.jsx
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
@@ -31,6 +32,8 @@ import {
   Delete,
   Image as ImageIcon,
   Inventory,
+  FilterList,
+  Clear,
 } from "@mui/icons-material";
 import toast from "react-hot-toast";
 import ProductForm from "../components/Forms/ProductForm";
@@ -48,98 +51,143 @@ const API_BASE_URL =
   "http://localhost:5000";
 
 export default function Products() {
+  // State management
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [openForm, setOpenForm] = useState(false);
-  const [editProduct, setEditProduct] = useState(null);
-  const [menuAnchor, setMenuAnchor] = useState(null);
-  const [menuRow, setMenuRow] = useState(null);
-  const [viewProduct, setViewProduct] = useState(null);
-  const [openImageModal, setOpenImageModal] = useState(false);
-  const [openVariantModal, setOpenVariantModal] = useState(false);
-  const [variantProduct, setVariantProduct] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [imageModalProduct, setImageModalProduct] = useState(null);
+  const [totalRows, setTotalRows] = useState(0);
 
-  // --- CHANGE: Pagination Fix ---
-  // Replaced page and pageSize states with paginationModel
+  // Pagination - Using paginationModel as per DataGrid best practices
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-  const [totalRows, setTotalRows] = useState(0);
-  // --- END CHANGE ---
 
+  // Sorting
+  const [sortModel, setSortModel] = useState([
+    { field: "createdAt", sort: "desc" },
+  ]);
+
+  // ✅ ADVANCED SEARCH - Searches name, brand, description, price
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 500);
-  const [filterCategory, setFilterCategory] = useState("");
 
-  const fetchProducts = async () => {
+  // Filters
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Modals
+  const [openForm, setOpenForm] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
+  const [viewProduct, setViewProduct] = useState(null);
+  const [openImageModal, setOpenImageModal] = useState(false);
+  const [imageModalProduct, setImageModalProduct] = useState(null);
+  const [openVariantModal, setOpenVariantModal] = useState(false);
+  const [variantProduct, setVariantProduct] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Menu
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [menuRow, setMenuRow] = useState(null);
+
+  // ✅ Fetch Products with Advanced Search
+  const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      // --- CHANGE: Use paginationModel ---
-      const resp = await productService.getProducts({
+      const params = {
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        search: debouncedSearch,
+        search: debouncedSearch, // ✅ Searches name, brand, description, price
         category: filterCategory,
-      });
-      // --- END CHANGE ---
+        status: filterStatus,
+        sortBy: sortModel[0]?.field || "createdAt",
+        sortOrder: sortModel[0]?.sort || "desc",
+      };
 
-      const rows = resp.data || [];
-      const mapped = rows.map((r) => {
-        const images = (r.images || []).map((img) => ({
-          ...img,
-          fullImageUrl:
-            img.fullUrl ||
-            img.fullImageUrl ||
-            (img.url ? `${API_BASE_URL}${img.url}` : img.imageUrl),
-        }));
-        return {
-          ...r,
-          images,
-          totalStock: r.stock ?? r.totalStock ?? 0,
-          stock: r.stock ?? r.totalStock ?? 0,
-        };
-      });
-      setProducts(mapped);
-      setTotalRows(resp.pagination?.total || 0);
+      const resp = await productService.getProducts(params);
+
+      if (resp.success) {
+        const rows = resp.data || [];
+        const mapped = rows.map((r) => {
+          // Process images with full URLs
+          const images = (r.images || []).map((img) => ({
+            ...img,
+            fullImageUrl:
+              img.fullUrl ||
+              img.fullImageUrl ||
+              (img.url ? `${API_BASE_URL}${img.url}` : img.imageUrl),
+          }));
+
+          return {
+            ...r,
+            images,
+            totalStock: r.stock ?? r.totalStock ?? 0,
+            stock: r.stock ?? r.totalStock ?? 0,
+          };
+        });
+
+        setProducts(mapped);
+        setTotalRows(resp.pagination?.total || 0);
+      }
     } catch (e) {
-      console.error("Fetch error:", e);
-      toast.error("Failed to load products");
+      console.error("Fetch products error:", e);
+      toast.error(e.message || "Failed to load products");
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    paginationModel,
+    debouncedSearch,
+    filterCategory,
+    filterStatus,
+    sortModel,
+  ]);
 
+  // ✅ Fetch Categories
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await categoryService.getCategories({ limit: 200 });
-      setCategories(res.data.categories || res.data || []);
+      const res = await categoryService.getCategories({
+        limit: 200,
+        status: "active",
+      });
+      setCategories(res.data?.categories || res.data || []);
     } catch (err) {
       console.error("Categories fetch error:", err);
     }
   }, []);
 
+  // Initial load
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
 
-  // --- CHANGE: Use paginationModel in dependency array ---
+  // Fetch products when dependencies change
   useEffect(() => {
     fetchProducts();
-  }, [paginationModel, debouncedSearch, filterCategory]);
-  // --- END CHANGE ---
+  }, [fetchProducts]);
 
+  // Listen for inventory updates
   useEffect(() => {
-    const onInv = (e) => {
+    const handleInventoryUpdate = () => {
       fetchProducts();
     };
-    window.addEventListener("inventory:updated", onInv);
-    return () => window.removeEventListener("inventory:updated", onInv);
-  }, [paginationModel, debouncedSearch, filterCategory]); // Added dependencies here too
 
+    window.addEventListener("inventory:updated", handleInventoryUpdate);
+    return () => {
+      window.removeEventListener("inventory:updated", handleInventoryUpdate);
+    };
+  }, [fetchProducts]);
+
+  // ✅ Clear All Filters
+  const handleClearFilters = () => {
+    setSearchTerm("");
+    setFilterCategory("");
+    setFilterStatus("");
+    setPaginationModel({ page: 0, pageSize: 10 });
+  };
+
+  // ✅ Get Image URL Helper
   const getImageUrl = (img) => {
     if (!img) return null;
     if (img.fullImageUrl) return img.fullImageUrl;
@@ -149,6 +197,7 @@ export default function Products() {
     return null;
   };
 
+  // ✅ Menu Handlers
   const openMenu = (event, row) => {
     event.stopPropagation();
     setMenuAnchor(event.currentTarget);
@@ -160,6 +209,7 @@ export default function Products() {
     setMenuRow(null);
   };
 
+  // ✅ Create/Update Product
   const handleCreateOrUpdate = async (formData, { isEdit, id }) => {
     setSubmitting(true);
     try {
@@ -170,24 +220,24 @@ export default function Products() {
       } else {
         await productService.createProduct(formData);
         toast.success("Product created successfully");
-        // --- CHANGE: Reset to page 0 after creation ---
+        // Reset to page 0 after creation
         if (paginationModel.page !== 0) {
           setPaginationModel((prev) => ({ ...prev, page: 0 }));
         } else {
           await fetchProducts();
         }
-        // --- END CHANGE ---
       }
       setOpenForm(false);
       setEditProduct(null);
     } catch (e) {
-      console.error("Save error:", e);
+      console.error("Save product error:", e);
       toast.error(e.message || "Save failed");
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ✅ Open Edit Modal
   const handleOpenEdit = async (row) => {
     closeMenu();
     try {
@@ -200,6 +250,7 @@ export default function Products() {
     }
   };
 
+  // ✅ View Product Details
   const handleView = async (row) => {
     closeMenu();
     try {
@@ -211,37 +262,42 @@ export default function Products() {
       }));
       setViewProduct(p);
     } catch (err) {
-      console.error("View error:", err);
+      console.error("View product error:", err);
       toast.error("Failed to load product");
     }
   };
 
+  // ✅ Manage Images
   const handleOpenImages = (row) => {
     setImageModalProduct(row);
     setOpenImageModal(true);
     closeMenu();
   };
 
+  // ✅ Manage Variants/Stock
   const handleOpenVariants = (row) => {
     setVariantProduct(row);
     setOpenVariantModal(true);
     closeMenu();
   };
 
+  // ✅ Delete Product
   const handleDelete = async (row) => {
     closeMenu();
     if (!window.confirm("Delete this product? This action cannot be undone."))
       return;
+
     try {
       await productService.deleteProduct(row._id);
-      toast.success("Product deleted");
+      toast.success("Product deleted successfully");
       await fetchProducts();
     } catch (err) {
-      console.error("Delete error:", err);
-      toast.error("Delete failed");
+      console.error("Delete product error:", err);
+      toast.error(err.message || "Delete failed");
     }
   };
 
+  // ✅ DataGrid Columns
   const columns = [
     {
       field: "images",
@@ -278,9 +334,7 @@ export default function Products() {
       minWidth: 260,
       renderCell: (params) => {
         const categoryLabel =
-          (params.row.category && params.row.category.name) ||
-          params.row.category ||
-          "Uncategorized";
+          params.row.category?.name || params.row.category || "Uncategorized";
         return (
           <Box>
             <Typography
@@ -304,15 +358,11 @@ export default function Products() {
                 variant="outlined"
                 sx={{ textTransform: "capitalize", fontWeight: 600 }}
               />
-              {params.row.brand ? (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ ml: 1 }}
-                >
+              {params.row.brand && (
+                <Typography variant="caption" color="text.secondary">
                   {params.row.brand}
                 </Typography>
-              ) : null}
+              )}
             </Stack>
           </Box>
         );
@@ -363,6 +413,7 @@ export default function Products() {
       field: "rating",
       headerName: "Rating",
       width: 130,
+      sortable: false,
       renderCell: (params) => (
         <Rating
           value={params.row.rating || 0}
@@ -399,13 +450,21 @@ export default function Products() {
       field: "status",
       headerName: "Status",
       width: 100,
-      renderCell: (p) => (
-        <Chip
-          label={p.value}
-          color={p.value === "active" ? "success" : "default"}
-          size="small"
-        />
-      ),
+      renderCell: (p) => {
+        const colorMap = {
+          active: "success",
+          draft: "warning",
+          inactive: "default",
+          archived: "error",
+        };
+        return (
+          <Chip
+            label={p.value}
+            color={colorMap[p.value] || "default"}
+            size="small"
+          />
+        );
+      },
     },
     {
       field: "createdAt",
@@ -444,66 +503,126 @@ export default function Products() {
 
   return (
     <Box sx={{ p: 2 }}>
+      {/* Search and Filters Card */}
       <Card sx={{ mb: 2 }}>
         <CardContent>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <TextField
-              placeholder="Search products, SKU, brand..."
-              size="small"
-              sx={{ flex: 1 }}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search />
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <FormControl size="small" sx={{ minWidth: 180 }}>
-              <InputLabel>Category</InputLabel>
-              <Select
-                value={filterCategory}
-                label="Category"
-                onChange={(e) => setFilterCategory(e.target.value)}
+          <Stack spacing={2}>
+            {/* Search Bar - Searches name, brand, description, price */}
+            <Stack direction="row" spacing={2} alignItems="center">
+              <TextField
+                placeholder="Search by name, brand, description, or price (e.g., 200)..."
+                size="small"
+                sx={{ flex: 1 }}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => setSearchTerm("")}
+                      >
+                        <Clear />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+
+              <Button
+                variant="outlined"
+                startIcon={<FilterList />}
+                onClick={() => setShowFilters(!showFilters)}
+                size="small"
               >
-                <MenuItem value="">All Categories</MenuItem>
-                {categories.map((c) => (
-                  <MenuItem key={c._id} value={c._id}>
-                    {c.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => {
-                setEditProduct(null);
-                setOpenForm(true);
-              }}
-            >
-              Add Product
-            </Button>
+                {showFilters ? "Hide" : "Show"} Filters
+              </Button>
+
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => {
+                  setEditProduct(null);
+                  setOpenForm(true);
+                }}
+              >
+                Add Product
+              </Button>
+            </Stack>
+
+            {/* Clear Filters Button */}
+            {(searchTerm || filterCategory || filterStatus) && (
+              <Button
+                variant="text"
+                startIcon={<Clear />}
+                onClick={handleClearFilters}
+                size="small"
+                sx={{ alignSelf: "flex-start" }}
+              >
+                Clear All Filters
+              </Button>
+            )}
+
+            {/* Filter Options */}
+            {showFilters && (
+              <Stack direction="row" spacing={2}>
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel>Category</InputLabel>
+                  <Select
+                    value={filterCategory}
+                    label="Category"
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                  >
+                    <MenuItem value="">All Categories</MenuItem>
+                    {categories.map((c) => (
+                      <MenuItem key={c._id} value={c._id}>
+                        {c.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={filterStatus}
+                    label="Status"
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                  >
+                    <MenuItem value="">All Status</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="draft">Draft</MenuItem>
+                    <MenuItem value="inactive">Inactive</MenuItem>
+                    <MenuItem value="archived">Archived</MenuItem>
+                  </Select>
+                </FormControl>
+              </Stack>
+            )}
           </Stack>
         </CardContent>
       </Card>
 
+      {/* DataGrid Card */}
       <Card>
         <Box sx={{ width: "100%" }}>
           <DataGrid
             rows={products}
             columns={columns}
             getRowId={(r) => r._id}
-            pagination
-            // --- CHANGE: Updated pagination props ---
             rowCount={totalRows}
+            pagination
             paginationMode="server"
             paginationModel={paginationModel}
             onPaginationModelChange={setPaginationModel}
-            pageSizeOptions={[10, 20, 50]}
-            // --- END CHANGE ---
+            pageSizeOptions={[10, 20, 50, 100]}
+            sortingMode="server"
+            sortModel={sortModel}
+            onSortModelChange={setSortModel}
             loading={loading}
             disableRowSelectionOnClick
             rowHeight={110}
@@ -520,6 +639,7 @@ export default function Products() {
         </Box>
       </Card>
 
+      {/* Actions Menu */}
       <Menu
         anchorEl={menuAnchor}
         open={Boolean(menuAnchor)}
@@ -550,6 +670,7 @@ export default function Products() {
         </MItem>
       </Menu>
 
+      {/* Product Form Modal */}
       <FormModal
         open={openForm}
         onClose={() => {
@@ -572,6 +693,7 @@ export default function Products() {
         />
       </FormModal>
 
+      {/* Product View Modal */}
       {viewProduct && (
         <ProductViewModal
           open={Boolean(viewProduct)}
@@ -589,6 +711,7 @@ export default function Products() {
         />
       )}
 
+      {/* Image Upload Modal */}
       {openImageModal && imageModalProduct && (
         <ImageUploadModal
           open={openImageModal}
@@ -601,6 +724,7 @@ export default function Products() {
         />
       )}
 
+      {/* Variant Stock Modal */}
       {variantProduct && (
         <VariantStockModal
           open={openVariantModal}

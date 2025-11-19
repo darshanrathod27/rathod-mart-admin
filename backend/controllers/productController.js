@@ -1,25 +1,22 @@
 // backend/controllers/productController.js
+
 import fs from "fs";
 import path from "path";
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import mongoose from "mongoose";
-
-// Import the category count updater (exported from categoryController.js)
 import { updateCategoryProductCount } from "./categoryController.js";
 
-/* Helper: build public URL for a relative path */
 const buildFullUrl = (req, relPath) => {
   if (!relPath) return null;
   const p = relPath.startsWith("/") ? relPath : `/${relPath}`;
   return `${req.protocol}://${req.get("host")}${p}`;
 };
 
-const UPLOAD_FOLDER = "/uploads/products"; // relative url prefix
+const UPLOAD_FOLDER = "/uploads/products";
 const ABS_UPLOAD_DIR = path.join(process.cwd(), "uploads", "products");
 
-/* Remove file helper - accepts filename only */
 const removeFile = async (filename) => {
   if (!filename) return;
   try {
@@ -45,12 +42,11 @@ export const createProduct = asyncHandler(async (req, res) => {
     tags,
     features,
     status,
-    featured, // <-- ADDED
-    trending, // <-- ADDED
-    isBestOffer, // <-- ADDED
+    featured,
+    trending,
+    isBestOffer,
   } = req.body;
 
-  // validation: category must exist
   const cat = await Category.findById(category);
   if (!cat) {
     const e = new Error("Invalid category");
@@ -58,16 +54,15 @@ export const createProduct = asyncHandler(async (req, res) => {
     throw e;
   }
 
-  // slug
   const slugBase = (name || "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   const slug = `${slugBase}-${Date.now().toString(36).slice(-6)}`;
 
-  // images from req.files (saved by multer)
   const images = [];
   const variantIdForUploads = req.body.variantId || null;
+
   if (req.files && req.files.length) {
     for (let i = 0; i < req.files.length; i++) {
       const f = req.files[i];
@@ -103,16 +98,15 @@ export const createProduct = asyncHandler(async (req, res) => {
       : [],
     status: status || "draft",
     slug,
-    totalStock: 0, // default 0
-    featured: featured === "true" || featured === true, // <-- ADDED
-    trending: trending === "true" || trending === true, // <-- ADDED
-    isBestOffer: isBestOffer === "true" || isBestOffer === true, // <-- ADDED
+    totalStock: 0,
+    featured: featured === "true" || featured === true,
+    trending: trending === "true" || trending === true,
+    isBestOffer: isBestOffer === "true" || isBestOffer === true,
   });
 
   const saved = await product.save();
   await saved.populate("category", "name slug");
 
-  // Update category product count (category now has one more product)
   try {
     if (saved.category) {
       await updateCategoryProductCount(
@@ -132,7 +126,7 @@ export const createProduct = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: result });
 });
 
-/* -------------------- List with pagination/filter/search/sort -------------------- */
+/* -------------------- List with pagination/filter/search/sort - ENHANCED SEARCH -------------------- */
 export const getProducts = asyncHandler(async (req, res) => {
   const {
     page = 1,
@@ -146,24 +140,25 @@ export const getProducts = asyncHandler(async (req, res) => {
     sortOrder = "desc",
     featured,
     trending,
-    isBestOffer, // <-- ADDED
+    isBestOffer,
   } = req.query;
 
   const q = { isDeleted: { $ne: true } };
+
   if (category) q.category = category;
   if (status) q.status = status;
 
-  // support featured, trending, and best offer filters
   if (typeof featured !== "undefined") {
     if (featured === "true") q.featured = true;
     else if (featured === "false") q.featured = false;
   }
+
   if (typeof trending !== "undefined") {
     if (trending === "true") q.trending = true;
     else if (trending === "false") q.trending = false;
   }
+
   if (typeof isBestOffer !== "undefined") {
-    // <-- ADDED
     if (isBestOffer === "true") q.isBestOffer = true;
     else if (isBestOffer === "false") q.isBestOffer = false;
   }
@@ -173,7 +168,25 @@ export const getProducts = asyncHandler(async (req, res) => {
     if (minPrice) q.basePrice.$gte = Number(minPrice);
     if (maxPrice) q.basePrice.$lte = Number(maxPrice);
   }
-  if (search) q.$text = { $search: search };
+
+  // ✅ ADVANCED SEARCH: Search by name, brand, description, price
+  if (search) {
+    const searchRegex = { $regex: search, $options: "i" };
+    const priceAsNumber = parseFloat(search);
+
+    q.$or = [
+      { name: searchRegex },
+      { brand: searchRegex },
+      { description: searchRegex },
+      { shortDescription: searchRegex },
+    ];
+
+    // If search is a number (e.g., "200"), search by price
+    if (!isNaN(priceAsNumber)) {
+      q.$or.push({ basePrice: priceAsNumber });
+      q.$or.push({ discountPrice: priceAsNumber });
+    }
+  }
 
   const p = Math.max(Number(page) || 1, 1);
   const l = Math.min(Math.max(Number(limit) || 12, 1), 100);
@@ -191,10 +204,10 @@ export const getProducts = asyncHandler(async (req, res) => {
     Product.countDocuments(q),
   ]);
 
-  // If VariantMaster exists, fetch variants for all product ids and attach
   const VariantModel =
     mongoose.models.VariantMaster || mongoose.models.Variant || null;
   let variantsByProduct = {};
+
   if (VariantModel && items.length) {
     const productIds = items.map((it) => it._id);
     const allVariants = await VariantModel.find({
@@ -204,7 +217,7 @@ export const getProducts = asyncHandler(async (req, res) => {
       .populate("size", "sizeName value")
       .populate("color", "colorName value")
       .lean();
-    // group by product id
+
     for (const v of allVariants) {
       const pid = v.product?.toString();
       if (!variantsByProduct[pid]) variantsByProduct[pid] = [];
@@ -212,12 +225,12 @@ export const getProducts = asyncHandler(async (req, res) => {
     }
   }
 
-  // attach primaryImage (fullUrl) for table preview + attach variants
   const rows = items.map((prod) => {
     const primary =
       (prod.images || []).find((i) => i.isPrimary) ||
       (prod.images && prod.images[0]) ||
       null;
+
     const pObj = {
       ...prod,
       primaryImage: primary ? primary.url : null,
@@ -239,19 +252,18 @@ export const getProduct = asyncHandler(async (req, res) => {
   const prod = await Product.findById(req.params.id)
     .populate("category", "name slug")
     .lean();
+
   if (!prod) {
     const e = new Error("Product not found");
     e.statusCode = 404;
     throw e;
   }
 
-  // attach fullUrl for images
   prod.images = (prod.images || []).map((img) => ({
     ...img,
     fullUrl: buildFullUrl(req, img.url),
   }));
 
-  // attach variants (if VariantMaster exists)
   const VariantModel =
     mongoose.models.VariantMaster || mongoose.models.Variant || null;
   if (VariantModel) {
@@ -274,18 +286,16 @@ export const getProduct = asyncHandler(async (req, res) => {
 export const updateProduct = asyncHandler(async (req, res) => {
   const id = req.params.id;
   const existing = await Product.findById(id);
+
   if (!existing) {
     const e = new Error("Product not found");
     e.statusCode = 404;
     throw e;
   }
 
-  // Store old category ID to update counts later if changed
   const oldCategoryId = existing.category ? existing.category.toString() : null;
-
   const update = { ...req.body };
 
-  // parse arrays if sent as JSON strings
   if (typeof update.tags === "string") {
     try {
       update.tags = JSON.parse(update.tags);
@@ -293,6 +303,7 @@ export const updateProduct = asyncHandler(async (req, res) => {
       update.tags = update.tags.split(",").map((s) => s.trim());
     }
   }
+
   if (typeof update.features === "string") {
     try {
       update.features = JSON.parse(update.features);
@@ -301,15 +312,14 @@ export const updateProduct = asyncHandler(async (req, res) => {
     }
   }
 
-  // Handle image deletions (body.deleteFilenames = JSON.stringify([...filenames]) or array)
   if (update.deleteFilenames) {
     try {
       const delList =
         typeof update.deleteFilenames === "string"
           ? JSON.parse(update.deleteFilenames)
           : update.deleteFilenames;
+
       if (Array.isArray(delList) && delList.length) {
-        // remove from disk and product.images
         for (const fname of delList) {
           await removeFile(fname);
         }
@@ -322,10 +332,10 @@ export const updateProduct = asyncHandler(async (req, res) => {
     }
   }
 
-  // Handle new images in req.files
   if (req.files && req.files.length) {
     const startIndex = (existing.images || []).length;
     const variantIdForUploads = req.body.variantId || update.variantId || null;
+
     for (let i = 0; i < req.files.length; i++) {
       const f = req.files[i];
       existing.images.push({
@@ -341,7 +351,6 @@ export const updateProduct = asyncHandler(async (req, res) => {
     }
   }
 
-  // Apply other updates (whitelist)
   const allowed = [
     "name",
     "description",
@@ -355,11 +364,11 @@ export const updateProduct = asyncHandler(async (req, res) => {
     "status",
     "featured",
     "trending",
-    "isBestOffer", // <-- ADDED
+    "isBestOffer",
   ];
+
   for (const k of allowed) {
     if (update[k] !== undefined) {
-      // Handle boolean strings from FormData
       if (["featured", "trending", "isBestOffer"].includes(k)) {
         existing[k] = update[k] === "true" || update[k] === true;
       } else {
@@ -368,7 +377,6 @@ export const updateProduct = asyncHandler(async (req, res) => {
     }
   }
 
-  // If name changed, update slug
   if (update.name && update.name !== existing.name) {
     existing.slug = `${update.name
       .toLowerCase()
@@ -379,11 +387,11 @@ export const updateProduct = asyncHandler(async (req, res) => {
   await existing.save();
   await existing.populate("category", "name slug");
 
-  // Update counts for new and old categories (if changed)
   try {
     const newCategoryId = existing.category
       ? (existing.category._id || existing.category).toString()
       : null;
+
     if (newCategoryId) {
       await updateCategoryProductCount(newCategoryId);
     }
@@ -412,17 +420,14 @@ export const deleteProduct = asyncHandler(async (req, res) => {
     throw e;
   }
 
-  // store category id for count update
   const categoryId = p.category ? p.category.toString() : null;
 
-  // delete files from disk
   for (const img of p.images || []) {
     if (img.filename) await removeFile(img.filename);
   }
 
   await Product.findByIdAndDelete(req.params.id);
 
-  // Update category count (product removed)
   try {
     if (categoryId) await updateCategoryProductCount(categoryId);
   } catch (err) {
@@ -436,6 +441,7 @@ export const deleteProduct = asyncHandler(async (req, res) => {
 export const reorderImages = asyncHandler(async (req, res) => {
   const { imageFilenames } = req.body;
   const product = await Product.findById(req.params.id);
+
   if (!product)
     throw Object.assign(new Error("Product not found"), { statusCode: 404 });
 
@@ -469,6 +475,7 @@ export const reorderImages = asyncHandler(async (req, res) => {
 export const setPrimaryImage = asyncHandler(async (req, res) => {
   const { filename } = req.body;
   const product = await Product.findById(req.params.id);
+
   if (!product)
     throw Object.assign(new Error("Product not found"), { statusCode: 404 });
 
@@ -495,9 +502,11 @@ export const getProductVariants = asyncHandler(async (req, res) => {
   const productId = req.params.id;
   const VariantModel =
     mongoose.models.VariantMaster || mongoose.models.Variant || null;
+
   if (!VariantModel) {
     return res.json({ success: true, data: [] });
   }
+
   const variants = await VariantModel.find({ product: productId }).lean();
   res.json({ success: true, data: variants });
 });
@@ -506,6 +515,7 @@ export const getProductVariants = asyncHandler(async (req, res) => {
 export const recalculateStock = asyncHandler(async (req, res) => {
   const productId = req.params.id;
   const product = await Product.findById(productId);
+
   if (!product) {
     const e = new Error("Product not found");
     e.statusCode = 404;
