@@ -1,142 +1,194 @@
-// src/components/Forms/InventoryForm.jsx
+// frontend/src/components/Forms/InventoryForm.jsx
 import React, { useEffect, useState } from "react";
 import {
   Box,
   TextField,
   Button,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  FormHelperText,
-  Typography,
   DialogActions,
+  InputAdornment,
+  Divider,
+  Stack,
 } from "@mui/material";
 import { useForm, Controller } from "react-hook-form";
 import * as yup from "yup";
 import { yupResolver } from "@hookform/resolvers/yup";
+import { Cancel, Save, Inventory, EditNote } from "@mui/icons-material";
 import toast from "react-hot-toast";
 import { inventoryService } from "../../services/inventoryService";
+import { productService } from "../../services/productService";
+import FormAutocomplete from "./FormAutocomplete";
 import {
   formActionsStyles,
   cancelButtonStyles,
   submitButtonStyles,
   textFieldStyles,
 } from "../../theme/FormStyles";
-import { Save, Cancel } from "@mui/icons-material";
-import FormAutocomplete from "./FormAutocomplete"; // <--- IMPORTED
 
 const schema = yup.object({
+  product: yup.string().required("Product is required"),
   variant: yup.string().nullable(),
   quantity: yup
     .number()
-    .typeError("Enter a number")
-    .positive("Must be > 0")
+    .typeError("Enter a valid number")
+    .positive("Must be greater than 0")
+    .integer("Must be a whole number")
     .required("Quantity is required"),
-  remarks: yup.string().max(120, "Max 120 chars").nullable(),
+  remarks: yup.string().max(200, "Max 200 characters").nullable(),
 });
 
-const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
+const InventoryForm = ({ mode = "add", initialData, onClose, onSuccess }) => {
+  const [products, setProducts] = useState([]);
   const [variants, setVariants] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loadingVariants, setLoadingVariants] = useState(false);
+
+  const isAdd = mode === "add";
 
   const {
     control,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
-    reset,
   } = useForm({
     resolver: yupResolver(schema),
-    defaultValues: { variant: "", quantity: "", remarks: "" },
+    defaultValues: {
+      product: initialData?.product?._id || "",
+      variant: initialData?.variant?._id || "",
+      quantity: "",
+      remarks: "",
+    },
   });
 
+  const selectedProductId = watch("product");
+
+  // 1. Load Products (Active Only)
   useEffect(() => {
-    const loadVariants = async () => {
-      if (!productId) {
-        setVariants([]);
-        return;
-      }
+    const fetchProducts = async () => {
+      setLoadingProducts(true);
       try {
-        setLoading(true);
-        const list = await inventoryService.getProductVariants(productId);
-        // Normalize for Autocomplete
-        const mappedList = (Array.isArray(list) ? list : list?.data || []).map(
-          (v) => ({
-            _id: v._id || v.id,
-            name: `${v?.size?.sizeName || ""}${v?.size ? " • " : ""}${
-              v?.color?.colorName || ""
-            }`,
-          })
-        );
-        setVariants(mappedList);
-      } catch {
-        setVariants([]);
+        const res = await productService.getProducts({
+          limit: 2000,
+          status: "active",
+        });
+        setProducts(Array.isArray(res?.data) ? res.data : []);
+      } catch (e) {
+        toast.error("Failed to load products");
       } finally {
-        setLoading(false);
+        setLoadingProducts(false);
       }
     };
-    loadVariants();
-  }, [productId]);
+    fetchProducts();
+  }, []);
 
-  const submit = async (data) => {
-    try {
-      if (!productId) {
-        toast.error("Select a product first");
-        return;
+  // 2. Load Variants when Product changes
+  useEffect(() => {
+    if (!selectedProductId) {
+      setVariants([]);
+      return;
+    }
+    const fetchVariants = async () => {
+      setLoadingVariants(true);
+      try {
+        const res = await inventoryService.getProductVariants(
+          selectedProductId
+        );
+        const variantList = (Array.isArray(res) ? res : res?.data || []).map(
+          (v) => ({
+            _id: v._id,
+            name: `${v.size?.sizeName || "Std"} / ${
+              v.color?.colorName || "Std"
+            } (Curr: ${v.currentStock || 0})`,
+          })
+        );
+        setVariants(variantList);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingVariants(false);
       }
+    };
+    fetchVariants();
+  }, [selectedProductId]);
+
+  // 3. Pre-fill Data
+  useEffect(() => {
+    if (initialData?.product) setValue("product", initialData.product._id);
+    if (initialData?.variant) setValue("variant", initialData.variant._id);
+  }, [initialData, setValue]);
+
+  const onSubmit = async (data) => {
+    try {
       const payload = {
-        product: productId,
+        product: data.product,
         variant: data.variant || undefined,
         quantity: Number(data.quantity),
         remarks:
-          data.remarks || (mode === "add" ? "Stock added" : "Stock reduced"),
+          data.remarks || (isAdd ? "Manual Restock" : "Manual Adjustment"),
       };
-      if (mode === "add") {
-        await inventoryService.addStock(payload);
-        toast.success("Stock added");
-      } else {
-        await inventoryService.reduceStock(payload);
-        toast.success("Stock reduced");
-      }
-      reset();
-      onSuccess?.();
+
+      if (isAdd) await inventoryService.addStock(payload);
+      else await inventoryService.reduceStock(payload);
+
+      onSuccess();
     } catch (e) {
-      toast.error(
-        e?.response?.data?.message || e.message || "Operation failed"
-      );
+      toast.error(e.response?.data?.message || "Operation failed");
     }
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit(submit)} noValidate>
-      <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
-        {/* --- UPDATED: Advanced Variant Search --- */}
+    <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
+      {/* Fields Container */}
+      <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 2.5 }}>
         <FormAutocomplete
           control={control}
-          name="variant"
-          label="Variant (optional)"
-          options={variants}
-          loading={loading}
-          disabled={loading || variants.length === 0}
-          helperText="Leave blank to adjust base product stock"
+          name="product"
+          label="Select Product"
+          options={products}
+          loading={loadingProducts}
+          disabled={!!initialData?.product} // Lock if clicked from row
+          error={!!errors.product}
+          helperText={errors.product?.message}
           sx={textFieldStyles}
         />
 
-        <Controller
-          name="quantity"
+        <FormAutocomplete
           control={control}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              type="number"
-              label="Quantity"
-              error={!!errors.quantity}
-              helperText={errors.quantity?.message}
-              fullWidth
-              sx={textFieldStyles}
-            />
-          )}
+          name="variant"
+          label="Select Variant (Optional)"
+          options={variants}
+          loading={loadingVariants}
+          disabled={!selectedProductId || !!initialData?.variant}
+          error={!!errors.variant}
+          helperText="Select variant to adjust specific stock"
+          sx={textFieldStyles}
         />
+
+        <Stack direction="row" spacing={2}>
+          <Controller
+            name="quantity"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                fullWidth
+                type="number"
+                label="Quantity"
+                placeholder="0"
+                error={!!errors.quantity}
+                helperText={errors.quantity?.message}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Inventory fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={textFieldStyles}
+              />
+            )}
+          />
+        </Stack>
 
         <Controller
           name="remarks"
@@ -144,24 +196,31 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
           render={({ field }) => (
             <TextField
               {...field}
-              label="Remarks"
+              fullWidth
+              label="Remarks / Reason"
               placeholder={
-                mode === "add"
-                  ? "Purchase / Restock note"
-                  : "Sale / Adjustment note"
+                isAdd ? "e.g., New Shipment" : "e.g., Damaged / Lost"
               }
+              multiline
+              rows={2}
               error={!!errors.remarks}
               helperText={errors.remarks?.message}
-              fullWidth
-              multiline
-              maxRows={3}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <EditNote fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
               sx={textFieldStyles}
             />
           )}
         />
       </Box>
 
-      <DialogActions sx={formActionsStyles}>
+      <Divider />
+
+      <DialogActions sx={{ ...formActionsStyles, px: 3, py: 2 }}>
         <Button
           variant="outlined"
           onClick={onClose}
@@ -173,14 +232,25 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
         <Button
           type="submit"
           variant="contained"
-          sx={submitButtonStyles}
-          startIcon={<Save />}
           disabled={isSubmitting}
+          sx={{
+            ...submitButtonStyles,
+            background: isAdd
+              ? "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)"
+              : "linear-gradient(135deg, #EF5350 0%, #C62828 100%)",
+            "&:hover": {
+              background: isAdd
+                ? "linear-gradient(135deg, #43A047 0%, #1B5E20 100%)"
+                : "linear-gradient(135deg, #E53935 0%, #B71C1C 100%)",
+            },
+          }}
+          startIcon={<Save />}
         >
-          {mode === "add" ? "Add Stock" : "Reduce Stock"}
+          {isAdd ? "Add Stock" : "Reduce Stock"}
         </Button>
       </DialogActions>
     </Box>
   );
 };
+
 export default InventoryForm;

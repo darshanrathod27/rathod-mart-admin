@@ -24,6 +24,7 @@ import {
   CardMedia,
   CardActions,
   Tooltip,
+  Autocomplete, // ✅ Added Autocomplete Import
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -113,9 +114,7 @@ export default function ProductForm({
       status: initialData?.status || "draft",
       featured: initialData?.featured || false,
       trending: initialData?.trending || false,
-      // --- CHANGE: Added isBestOffer ---
       isBestOffer: initialData?.isBestOffer || false,
-      // --- END CHANGE ---
       tags: initialData?.tags || [],
       features: initialData?.features || [],
     },
@@ -181,9 +180,7 @@ export default function ProductForm({
         status: initialData?.status || "draft",
         featured: initialData?.featured || false,
         trending: initialData?.trending || false,
-        // --- CHANGE: Added isBestOffer ---
         isBestOffer: initialData?.isBestOffer || false,
-        // --- END CHANGE ---
         tags: initialData?.tags || [],
         features: initialData?.features || [],
       });
@@ -295,9 +292,7 @@ export default function ProductForm({
     fd.append("status", vals.status || "draft");
     fd.append("featured", vals.featured ? "true" : "false");
     fd.append("trending", vals.trending ? "true" : "false");
-    // --- CHANGE: Send isBestOffer to backend ---
     fd.append("isBestOffer", vals.isBestOffer ? "true" : "false");
-    // --- END CHANGE ---
     fd.append("tags", JSON.stringify(vals.tags || []));
     fd.append("features", JSON.stringify(vals.features || []));
 
@@ -357,30 +352,44 @@ export default function ProductForm({
               )}
             />
 
+            {/* ✅ UPDATED ADVANCED CATEGORY DROPDOWN ✅ */}
             <Controller
               name="category"
               control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  select
-                  label="Category"
-                  fullWidth
-                  required
-                  size="small"
-                  error={!!errors.category}
-                  helperText={errors.category?.message}
-                  sx={textFieldStyles}
-                >
-                  <MenuItem value="">Select Category</MenuItem>
-                  {categories.map((c) => (
-                    <MenuItem key={c._id || c.id} value={c._id || c.id}>
-                      {c.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
+              render={({ field: { onChange, value, ref, onBlur } }) => {
+                const selectedCategory =
+                  categories.find((c) => (c._id || c.id) === value) || null;
+
+                return (
+                  <Autocomplete
+                    options={categories}
+                    getOptionLabel={(option) => option.name || ""}
+                    value={selectedCategory}
+                    onChange={(_, newValue) => {
+                      onChange(newValue ? newValue._id || newValue.id : "");
+                    }}
+                    onBlur={onBlur}
+                    isOptionEqualToValue={(option, val) =>
+                      (option._id || option.id) === (val._id || val.id)
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Category"
+                        required
+                        fullWidth
+                        size="small"
+                        inputRef={ref}
+                        error={!!errors.category}
+                        helperText={errors.category?.message}
+                        sx={textFieldStyles}
+                      />
+                    )}
+                  />
+                );
+              }}
             />
+            {/* ✅ END UPDATE ✅ */}
 
             <Controller
               name="brand"
@@ -757,7 +766,6 @@ export default function ProductForm({
                   />
                 )}
               />
-              {/* --- CHANGE: Added Best Offer Switch --- */}
               <Controller
                 name="isBestOffer"
                 control={control}
@@ -770,7 +778,6 @@ export default function ProductForm({
                   />
                 )}
               />
-              {/* --- END CHANGE --- */}
             </Stack>
           </Stack>
         </Box>

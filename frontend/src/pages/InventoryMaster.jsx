@@ -1,4 +1,4 @@
-// src/pages/InventoryMaster.jsx
+// frontend/src/pages/InventoryMaster.jsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Box,
@@ -7,18 +7,28 @@ import {
   TextField,
   InputAdornment,
   Button,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
   Typography,
   Chip,
-  Alert,
-  IconButton,
   Stack,
+  Divider,
+  Autocomplete,
+  CircularProgress,
+  IconButton,
+  Tooltip,
+  Grid,
+  Paper,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Search, Add, Remove, Refresh } from "@mui/icons-material";
+import {
+  Search,
+  Add,
+  Remove,
+  TrendingUp,
+  TrendingDown,
+  Inventory2,
+  Clear,
+  History,
+} from "@mui/icons-material";
 import FormModal from "../components/Modals/FormModal";
 import InventoryForm from "../components/Forms/InventoryForm";
 import toast from "react-hot-toast";
@@ -26,50 +36,57 @@ import { useDebounce } from "../hooks/useDebounce";
 import { productService } from "../services/productService";
 import { inventoryService } from "../services/inventoryService";
 
+// Helper for date formatting
 const fmtDate = (d) => {
-  if (!d) return "-";
+  if (!d) return "—";
   try {
     return new Date(d).toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
-      year: "numeric",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
-    return "-";
+    return "—";
   }
 };
 
 const InventoryMaster = () => {
-  // filters
+  // --- State ---
   const [products, setProducts] = useState([]);
-  const [productId, setProductId] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const debounced = useDebounce(searchTerm, 500);
+  const [selectedProduct, setSelectedProduct] = useState(null); // Object { _id, name ... }
 
-  // data
+  // Ledger Search
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 500);
+
+  // Data
   const [variants, setVariants] = useState([]);
   const [ledgerRows, setLedgerRows] = useState([]);
-  const [rowCount, setRowCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [ledgerCount, setLedgerCount] = useState(0);
+  const [loadingLedger, setLoadingLedger] = useState(false);
+  const [loadingVariants, setLoadingVariants] = useState(false);
 
-  // summary
+  // Summary Data
   const [summary, setSummary] = useState({
     totalPurchase: 0,
     totalSale: 0,
     currentStock: 0,
   });
 
-  // pagination
+  // Pagination
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
 
-  // modal
+  // Modal State
   const [openForm, setOpenForm] = useState(false);
-  const [mode, setMode] = useState("add"); // 'add' | 'reduce'
+  const [formMode, setFormMode] = useState("add"); // 'add' | 'reduce'
+  const [formInitialData, setFormInitialData] = useState(null); // { product, variant }
 
-  // Load products (null-safe to different API shapes)
+  // --- 1. Load Products for Filter ---
   useEffect(() => {
     const loadProducts = async () => {
       try {
@@ -77,352 +94,494 @@ const InventoryMaster = () => {
           limit: 1000,
           status: "active",
         });
-        let list = [];
-        if (Array.isArray(res?.data)) list = res.data;
-        else if (Array.isArray(res?.data?.products)) list = res.data.products;
-        else if (Array.isArray(res?.products)) list = res.products;
-        else if (Array.isArray(res)) list = res;
-        setProducts(list || []);
-      } catch {
-        toast.error("Failed to load products");
-        setProducts([]);
+        const list = Array.isArray(res?.data) ? res.data : res || [];
+        setProducts(list);
+      } catch (e) {
+        console.error("Product load error", e);
       }
     };
     loadProducts();
   }, []);
 
-  const fetchSummary = useCallback(async () => {
-    if (!productId) {
-      setSummary({ totalPurchase: 0, totalSale: 0, currentStock: 0 });
-      return;
-    }
-    try {
-      const s = await inventoryService.getStockSummary(productId);
-      setSummary({
-        totalPurchase: s?.totalPurchase || 0,
-        totalSale: s?.totalSale || 0,
-        currentStock: s?.currentStock || 0,
-      });
-    } catch {
-      setSummary({ totalPurchase: 0, totalSale: 0, currentStock: 0 });
-    }
-  }, [productId]);
+  // --- 2. Fetch Data (Auto-Apply) ---
 
-  const fetchVariants = useCallback(async () => {
-    if (!productId) {
-      setVariants([]);
-      return;
-    }
-    try {
-      const list = await inventoryService.getProductVariants(productId);
-      setVariants(Array.isArray(list) ? list : []);
-    } catch {
-      setVariants([]);
-    }
-  }, [productId]);
+  // A. Fetch Stock Summary & Variants (When Product Changes)
+  useEffect(() => {
+    const fetchProductDetails = async () => {
+      if (!selectedProduct) {
+        setVariants([]);
+        setSummary({ totalPurchase: 0, totalSale: 0, currentStock: 0 });
+        return;
+      }
 
+      setLoadingVariants(true);
+      try {
+        const [summaryRes, variantsRes] = await Promise.all([
+          inventoryService.getStockSummary(selectedProduct._id),
+          inventoryService.getProductVariants(selectedProduct._id),
+        ]);
+
+        setSummary({
+          totalPurchase: summaryRes?.totalPurchase || 0,
+          totalSale: summaryRes?.totalSale || 0,
+          currentStock: summaryRes?.currentStock || 0,
+        });
+        setVariants(Array.isArray(variantsRes) ? variantsRes : []);
+      } catch (e) {
+        console.error("Details fetch error", e);
+      } finally {
+        setLoadingVariants(false);
+      }
+    };
+
+    fetchProductDetails();
+  }, [selectedProduct]);
+
+  // B. Fetch Ledger (When Search, Product, or Page Changes)
   const fetchLedger = useCallback(async () => {
+    setLoadingLedger(true);
     try {
-      setLoading(true);
       const res = await inventoryService.getInventoryLedger({
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        product: productId || undefined,
-        search: debounced || undefined,
+        product: selectedProduct?._id,
+        search: debouncedSearch,
       });
-      const ledgers = res?.ledgers || res?.data?.ledgers || [];
-      const pagination = res?.pagination || res?.data?.pagination || {};
-      setLedgerRows(Array.isArray(ledgers) ? ledgers : []);
-      setRowCount(pagination?.total || 0);
-    } catch {
-      toast.error("Failed to fetch inventory ledger");
-      setLedgerRows([]);
-      setRowCount(0);
+
+      const rows = res?.ledgers || res?.data?.ledgers || [];
+      const total = res?.pagination?.total || res?.data?.pagination?.total || 0;
+
+      setLedgerRows(Array.isArray(rows) ? rows : []);
+      setLedgerCount(total);
+    } catch (e) {
+      console.error("Ledger fetch error", e);
     } finally {
-      setLoading(false);
+      setLoadingLedger(false);
     }
-  }, [paginationModel, productId, debounced]);
+  }, [paginationModel, selectedProduct, debouncedSearch]);
 
   useEffect(() => {
-    fetchSummary();
-    fetchVariants();
     fetchLedger();
-  }, [fetchSummary, fetchVariants, fetchLedger]);
+  }, [fetchLedger]);
 
-  // Columns (renderCell only → null-safe)
+  // --- Handlers ---
+
+  const handleOpenForm = (mode, product = null, variant = null) => {
+    setFormMode(mode);
+    // If opened from row, pre-fill data. If from top button, use selectedProduct if available
+    setFormInitialData({
+      product: product || selectedProduct, // Use row product OR filter product
+      variant: variant,
+    });
+    setOpenForm(true);
+  };
+
+  const handleSuccess = () => {
+    setOpenForm(false);
+    toast.success(
+      formMode === "add"
+        ? "Stock Added Successfully"
+        : "Stock Reduced Successfully"
+    );
+    // Refresh data
+    fetchLedger();
+    // Trigger re-fetch of variants by momentarily creating a new object reference or relying on the fact that we just updated
+    // A simple way is to just re-run the effect logic manually or toggle a dummy state,
+    // but since ledger updates, let's also re-fetch variants if product is selected.
+    if (selectedProduct) {
+      inventoryService
+        .getProductVariants(selectedProduct._id)
+        .then((res) => setVariants(res || []));
+      inventoryService
+        .getStockSummary(selectedProduct._id)
+        .then((res) => setSummary(res || {}));
+    }
+  };
+
+  // --- Columns ---
+
   const variantColumns = useMemo(
     () => [
       {
+        field: "sku",
+        headerName: "SKU",
+        width: 150,
+        renderCell: (p) => (
+          <Typography variant="body2" fontFamily="monospace">
+            {p.value || "—"}
+          </Typography>
+        ),
+      },
+      {
         field: "size",
         headerName: "Size",
-        width: 140,
-        renderCell: (p) => p?.row?.size?.sizeName || p?.row?.size?.value || "—",
+        width: 120,
+        renderCell: (p) => p.row.size?.sizeName || "—",
       },
       {
         field: "color",
         headerName: "Color",
-        width: 140,
-        renderCell: (p) =>
-          p?.row?.color?.colorName || p?.row?.color?.value || "—",
-      },
-      {
-        field: "price",
-        headerName: "Price",
         width: 120,
-        renderCell: (p) => `₹${Number(p?.row?.price ?? 0)}`,
+        renderCell: (p) => (
+          <Stack direction="row" alignItems="center" gap={1}>
+            {p.row.color?.value && (
+              <Box
+                sx={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  bgcolor: p.row.color.value,
+                  border: "1px solid #ddd",
+                }}
+              />
+            )}
+            {p.row.color?.colorName || "—"}
+          </Stack>
+        ),
       },
       {
         field: "currentStock",
-        headerName: "Stock",
-        width: 120,
-        renderCell: (p) => Number(p?.row?.currentStock ?? 0),
-      },
-      {
-        field: "status",
-        headerName: "Status",
-        width: 120,
+        headerName: "Current Stock",
+        width: 140,
         renderCell: (p) => (
           <Chip
+            label={p.value || 0}
+            color={p.value > 10 ? "success" : p.value > 0 ? "warning" : "error"}
             size="small"
-            label={p?.row?.status || "Inactive"}
-            color={
-              (p?.row?.status || "").toLowerCase() === "active"
-                ? "success"
-                : "default"
-            }
+            sx={{ fontWeight: 700, minWidth: 60 }}
           />
         ),
       },
-    ],
-    []
-  );
-
-  const ledgerColumns = useMemo(
-    () => [
       {
-        field: "createdAt",
-        headerName: "Date",
-        width: 150,
-        renderCell: (p) => fmtDate(p?.row?.createdAt || p?.row?.updatedAt),
-      },
-      {
-        field: "referenceType",
-        headerName: "Ref",
-        width: 110,
-        renderCell: (p) => p?.row?.referenceType || "-",
-      },
-      {
-        field: "type",
-        headerName: "Type",
-        width: 100,
-        renderCell: (p) => p?.row?.type || "-",
-      },
-      {
-        field: "quantity",
-        headerName: "Qty",
-        width: 90,
-        renderCell: (p) => Number(p?.row?.quantity ?? 0),
-      },
-      {
-        field: "balanceStock",
-        headerName: "Balance",
-        width: 110,
-        renderCell: (p) => Number(p?.row?.balanceStock ?? 0),
-      },
-      {
-        field: "product",
-        headerName: "Product",
-        width: 220,
-        renderCell: (p) => p?.row?.product?.name || p?.row?.productName || "—",
-      },
-      {
-        field: "variant",
-        headerName: "Variant",
-        width: 260,
-        renderCell: (p) => {
-          const v = p?.row?.variant;
-          if (!v) return "—";
-          const sz = v?.size?.sizeName || v?.size?.value || "";
-          const col = v?.color?.colorName || v?.color?.value || "";
-          return `${sz}${sz && col ? " • " : ""}${col}`;
-        },
-      },
-      {
-        field: "remarks",
-        headerName: "Remarks",
-        width: 240,
-        renderCell: (p) => p?.row?.remarks || "-",
+        field: "actions",
+        headerName: "Quick Actions",
+        width: 180,
+        sortable: false,
+        renderCell: (p) => (
+          <Stack direction="row" spacing={1}>
+            <Tooltip title="Add Stock">
+              <IconButton
+                size="small"
+                color="primary"
+                onClick={() => handleOpenForm("add", selectedProduct, p.row)}
+                sx={{
+                  bgcolor: "primary.50",
+                  "&:hover": { bgcolor: "primary.100" },
+                }}
+              >
+                <Add fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Reduce Stock">
+              <IconButton
+                size="small"
+                color="error"
+                onClick={() => handleOpenForm("reduce", selectedProduct, p.row)}
+                sx={{
+                  bgcolor: "error.50",
+                  "&:hover": { bgcolor: "error.100" },
+                }}
+              >
+                <Remove fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        ),
       },
     ],
-    []
+    [selectedProduct]
   );
 
-  const applyFilters = () => {
-    setPaginationModel((p) => ({ ...p, page: 0 }));
-    fetchSummary();
-    fetchVariants();
-    fetchLedger();
-    toast.success("Filters applied!");
-  };
-
-  const refreshAll = () => {
-    fetchSummary();
-    fetchVariants();
-    fetchLedger();
-    toast.success("Refreshed");
-  };
+  const ledgerColumns = [
+    {
+      field: "createdAt",
+      headerName: "Date & Time",
+      width: 160,
+      renderCell: (p) => (
+        <Stack>
+          <Typography variant="caption" fontWeight={600} color="text.primary">
+            {fmtDate(p.value).split(",")[0]}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {fmtDate(p.value).split(",")[1]}
+          </Typography>
+        </Stack>
+      ),
+    },
+    {
+      field: "type",
+      headerName: "Type",
+      width: 100,
+      renderCell: (p) => (
+        <Chip
+          label={p.value}
+          size="small"
+          color={p.value === "IN" ? "success" : "error"}
+          icon={p.value === "IN" ? <TrendingUp /> : <TrendingDown />}
+          sx={{ borderRadius: 1, fontWeight: 600, minWidth: 70 }}
+        />
+      ),
+    },
+    {
+      field: "product",
+      headerName: "Product Details",
+      flex: 1,
+      minWidth: 250,
+      renderCell: (p) => {
+        const prodName = p.row.product?.name || "Unknown Product";
+        const variantStr = p.row.variant
+          ? `${p.row.variant.size?.sizeName || ""} • ${
+              p.row.variant.color?.colorName || ""
+            }`
+          : "Base Product";
+        return (
+          <Box>
+            <Typography variant="body2" fontWeight={600} noWrap>
+              {prodName}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {variantStr}
+            </Typography>
+          </Box>
+        );
+      },
+    },
+    {
+      field: "quantity",
+      headerName: "Qty",
+      width: 90,
+      renderCell: (p) => (
+        <Typography
+          variant="body2"
+          fontWeight={700}
+          color={p.row.type === "IN" ? "success.main" : "error.main"}
+        >
+          {p.row.type === "IN" ? "+" : "-"}
+          {p.value}
+        </Typography>
+      ),
+    },
+    {
+      field: "balanceStock",
+      headerName: "Balance",
+      width: 100,
+      renderCell: (p) => (
+        <Typography variant="body2" color="text.secondary">
+          {p.value}
+        </Typography>
+      ),
+    },
+    {
+      field: "remarks",
+      headerName: "Remarks",
+      flex: 1,
+      minWidth: 200,
+      renderCell: (p) => (
+        <Typography variant="body2" color="text.secondary" noWrap>
+          {p.value || "-"}
+        </Typography>
+      ),
+    },
+  ];
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Top controls kept simple like other pages */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Stack direction="row" gap={2} alignItems="center" flexWrap="wrap">
+    <Box sx={{ p: 2 }}>
+      {/* --- Header Controls --- */}
+      <Card sx={{ mb: 3, overflow: "visible" }}>
+        <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+          <Box
+            sx={{
+              display: "flex",
+              gap: 2,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            {/* 1. Product Filter (Autocomplete) */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 280, flex: { xs: 1, md: 0 } }}
+              options={products}
+              getOptionLabel={(option) => option.name || ""}
+              value={selectedProduct}
+              onChange={(event, newValue) => setSelectedProduct(newValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Select Product to Manage Stock"
+                  placeholder="Search product..."
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Inventory2 color="action" fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option._id === value._id}
+            />
+
+            {/* 2. Search Ledger */}
             <TextField
-              placeholder="Search remarks / type..."
+              placeholder="Search ledger history..."
               size="small"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search />
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchTerm("")}>
+                      <Clear fontSize="small" />
+                    </IconButton>
                   </InputAdornment>
                 ),
               }}
-              sx={{ flexGrow: 1, minWidth: 250 }}
+              sx={{ flexGrow: 1, minWidth: 200 }}
             />
-            <FormControl size="small" sx={{ minWidth: 220 }}>
-              <InputLabel>Filter by Product</InputLabel>
-              <Select
-                value={productId}
-                label="Filter by Product"
-                onChange={(e) => setProductId(e.target.value)}
-              >
-                <MenuItem value="">
-                  <em>All Products</em>
-                </MenuItem>
-                {(products || []).map((p) => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button variant="outlined" onClick={applyFilters}>
-              Apply
+
+            {/* 3. Global Action Buttons */}
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<Add />}
+              onClick={() => handleOpenForm("add")}
+              sx={{ whiteSpace: "nowrap", height: 40 }}
+            >
+              Add Stock
             </Button>
-            <IconButton onClick={refreshAll} title="Refresh">
-              <Refresh />
-            </IconButton>
-          </Stack>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<Remove />}
+              onClick={() => handleOpenForm("reduce")}
+              sx={{ whiteSpace: "nowrap", height: 40 }}
+            >
+              Reduce Stock
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* Summary chips */}
-      <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
-        <Chip label={`Purchased: ${summary.totalPurchase}`} />
-        <Chip label={`Sold: ${summary.totalSale}`} />
-        <Chip
-          color="success"
-          label={`Current Stock: ${summary.currentStock}`}
-        />
-      </Box>
-
-      {/* Variants card with its own Add/Reduce actions */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ mb: 1 }}
-          >
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-              Variants (with current stock)
-            </Typography>
-            <Stack direction="row" gap={1}>
-              <Button
-                variant="contained"
-                size="small"
-                startIcon={<Add />}
-                onClick={() => {
-                  setMode("add");
-                  setOpenForm(true);
-                }}
-                disabled={!productId}
+      {/* --- Product Specific View (Only if Product Selected) --- */}
+      {selectedProduct && (
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          {/* Left: Summary Cards */}
+          <Grid item xs={12} md={4}>
+            <Stack spacing={2}>
+              <Paper
+                sx={{ p: 2, bgcolor: "#e8f5e9", border: "1px solid #c8e6c9" }}
               >
-                Add Stock
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                color="error"
-                startIcon={<Remove />}
-                onClick={() => {
-                  setMode("reduce");
-                  setOpenForm(true);
-                }}
-                disabled={!productId}
+                <Typography variant="subtitle2" color="success.dark">
+                  Total Stock In
+                </Typography>
+                <Typography variant="h4" fontWeight={700} color="success.main">
+                  +{summary.totalPurchase}
+                </Typography>
+              </Paper>
+              <Paper
+                sx={{ p: 2, bgcolor: "#ffebee", border: "1px solid #ffcdd2" }}
               >
-                Reduce
-              </Button>
+                <Typography variant="subtitle2" color="error.dark">
+                  Total Stock Out
+                </Typography>
+                <Typography variant="h4" fontWeight={700} color="error.main">
+                  -{summary.totalSale}
+                </Typography>
+              </Paper>
+              <Paper
+                sx={{ p: 2, bgcolor: "#e3f2fd", border: "1px solid #bbdefb" }}
+              >
+                <Typography variant="subtitle2" color="primary.dark">
+                  Current Available
+                </Typography>
+                <Typography variant="h4" fontWeight={700} color="primary.main">
+                  {summary.currentStock}
+                </Typography>
+              </Paper>
             </Stack>
-          </Stack>
+          </Grid>
 
-          <DataGrid
-            autoHeight
-            rows={Array.isArray(variants) ? variants : []}
-            columns={variantColumns}
-            getRowId={(row) => row._id}
-            hideFooterPagination
-            hideFooterSelectedRowCount
-            disableRowSelectionOnClick
-          />
-        </CardContent>
-      </Card>
+          {/* Right: Variants Table */}
+          <Grid item xs={12} md={8}>
+            <Card sx={{ height: "100%" }}>
+              <Box sx={{ p: 2, borderBottom: "1px solid #eee" }}>
+                <Typography variant="h6" fontWeight={600}>
+                  Variants & Stock Levels
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Click <Add fontSize="inherit" /> or{" "}
+                  <Remove fontSize="inherit" /> to adjust stock instantly.
+                </Typography>
+              </Box>
+              <DataGrid
+                rows={variants}
+                columns={variantColumns}
+                getRowId={(row) => row._id}
+                loading={loadingVariants}
+                hideFooter
+                autoHeight
+                disableRowSelectionOnClick
+                sx={{ border: "none" }}
+              />
+            </Card>
+          </Grid>
+        </Grid>
+      )}
 
-      {/* Ledger table */}
+      {/* --- Inventory Ledger Table --- */}
       <Card>
-        <CardContent>
-          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
-            Inventory Ledger
+        <Box
+          sx={{
+            p: 2,
+            borderBottom: "1px solid #eee",
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+          }}
+        >
+          <History color="action" />
+          <Typography variant="h6" fontWeight={600}>
+            Inventory History
           </Typography>
-          <DataGrid
-            autoHeight
-            rows={Array.isArray(ledgerRows) ? ledgerRows : []}
-            columns={ledgerColumns}
-            getRowId={(row) => row._id}
-            loading={loading}
-            rowCount={rowCount}
-            pageSizeOptions={[10, 20, 50]}
-            paginationModel={paginationModel}
-            onPaginationModelChange={setPaginationModel}
-            paginationMode="server"
-            disableRowSelectionOnClick
-          />
-          {!productId && (
-            <Alert sx={{ mt: 2 }} severity="info">
-              Tip: Select a product to see variants and stock summary.
-            </Alert>
-          )}
-        </CardContent>
+        </Box>
+        <DataGrid
+          rows={ledgerRows}
+          columns={ledgerColumns}
+          getRowId={(row) => row._id}
+          loading={loadingLedger}
+          rowCount={ledgerCount}
+          paginationMode="server"
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          pageSizeOptions={[10, 20, 50]}
+          disableRowSelectionOnClick
+          autoHeight
+          sx={{
+            border: "none",
+            "& .MuiDataGrid-columnHeaders": { bgcolor: "#fafafa" },
+          }}
+        />
       </Card>
 
-      {/* Add/Reduce stock modal */}
+      {/* --- Modal Form --- */}
       <FormModal
         open={openForm}
         onClose={() => setOpenForm(false)}
-        title={mode === "add" ? "Add Stock" : "Reduce Stock"}
+        title={formMode === "add" ? "Add New Stock" : "Reduce Stock"}
+        maxWidth="sm"
       >
         <InventoryForm
-          productId={productId}
-          mode={mode}
+          mode={formMode}
+          initialData={formInitialData} // Pass pre-selected product/variant
           onClose={() => setOpenForm(false)}
-          onSuccess={() => {
-            setOpenForm(false);
-            refreshAll();
-          }}
+          onSuccess={handleSuccess}
         />
       </FormModal>
     </Box>
