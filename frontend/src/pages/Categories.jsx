@@ -1,5 +1,4 @@
 // frontend/src/pages/Categories.jsx
-
 import React, { useState, useEffect, useCallback } from "react";
 import { categoryService } from "../services/categoryService";
 import {
@@ -18,7 +17,11 @@ import {
   InputLabel,
   Select,
   Typography,
-  Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
@@ -27,9 +30,8 @@ import {
   MoreVert,
   Edit,
   Delete,
-  AutoFixHigh,
-  FilterList,
   Clear,
+  Warning,
 } from "@mui/icons-material";
 import { motion } from "framer-motion";
 import FormModal from "../components/Modals/FormModal";
@@ -37,82 +39,75 @@ import CategoryForm from "../components/Forms/CategoryForm";
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 
+// --- Delete Confirmation Component ---
+const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName }) => (
+  <Dialog open={open} onClose={onClose}>
+    <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Warning color="error" /> Confirm Deletion
+    </DialogTitle>
+    <DialogContent>
+      <DialogContentText>
+        Are you sure you want to delete category <strong>{itemName}</strong>?
+        This action cannot be undone.
+      </DialogContentText>
+    </DialogContent>
+    <DialogActions sx={{ p: 2 }}>
+      <Button onClick={onClose} variant="outlined" color="inherit">
+        Cancel
+      </Button>
+      <Button onClick={onConfirm} variant="contained" color="error">
+        Delete
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
+
 const Categories = () => {
-  // Table data
+  // Table Data
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rowCount, setRowCount] = useState(0);
 
-  // Server pagination
+  // Pagination & Sorting
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-
-  // ✅ ADVANCED SEARCH - Searches name and description
-  const [searchTerm, setSearchTerm] = useState("");
-  const debouncedSearch = useDebounce(searchTerm, 500);
-
-  // Filters
-  const [filterStatus, setFilterStatus] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Sorting
   const [sortModel, setSortModel] = useState([
     { field: "createdAt", sort: "desc" },
   ]);
 
-  // Modal/Menu state
+  // Filters
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 500);
+
+  // UI State
   const [openModal, setOpenModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedRow, setSelectedRow] = useState(null);
 
-  // ✅ Fix Icons Feature
-  const handleFixIcons = async () => {
-    if (
-      !window.confirm(
-        "This will update all existing category icons and colors. Continue?"
-      )
-    )
-      return;
+  // Delete State
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
 
-    try {
-      const res = await categoryService.fixCategoryIcons();
-      toast.success(res?.message || "Icons fixed successfully!");
-      fetchData();
-    } catch (e) {
-      console.error("Fix icons error:", e);
-      const errMsg =
-        e?.message || e?.response?.data?.message || "Failed to fix icons";
-      toast.error(errMsg);
-    }
-  };
-
-  // ✅ Fetch Categories with Advanced Search
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        search: debouncedSearch, // ✅ Searches name and description
+        search: debouncedSearch,
         status: filterStatus,
         sortBy: sortModel[0]?.field || "createdAt",
         sortOrder: sortModel[0]?.sort || "desc",
       };
-
       const res = await categoryService.getCategories(params);
-
       setRows(Array.isArray(res?.data) ? res.data : []);
       setRowCount(res?.pagination?.total || 0);
     } catch (e) {
-      console.error("Fetch categories error:", e);
-      const errMsg =
-        e?.message ||
-        e?.response?.data?.message ||
-        "Failed to fetch categories";
-      toast.error(errMsg);
+      toast.error("Failed to load categories");
     } finally {
       setLoading(false);
     }
@@ -122,16 +117,16 @@ const Categories = () => {
     fetchData();
   }, [fetchData]);
 
-  // ✅ Clear All Filters
-  const handleClearFilters = () => {
-    setSearchTerm("");
-    setFilterStatus("");
-    setPaginationModel({ page: 0, pageSize: 10 });
-  };
-
+  // Handlers
   const handleAdd = () => {
     setEditItem(null);
     setOpenModal(true);
+  };
+
+  const handleEdit = (row) => {
+    setEditItem(row);
+    setOpenModal(true);
+    handleMenuClose();
   };
 
   const handleMenuClick = (e, row) => {
@@ -144,65 +139,55 @@ const Categories = () => {
     setSelectedRow(null);
   };
 
-  const handleEdit = (row) => {
-    setEditItem(row);
-    setOpenModal(true);
+  const confirmDelete = (row) => {
+    setItemToDelete(row);
+    setDeleteDialogOpen(true);
     handleMenuClose();
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this category? This action cannot be undone."))
-      return;
-
+  const handleDelete = async () => {
+    if (!itemToDelete) return;
     try {
-      await categoryService.deleteCategory(id);
+      await categoryService.deleteCategory(itemToDelete._id);
       toast.success("Category deleted successfully");
       fetchData();
     } catch (e) {
-      console.error("Delete error:", e);
-      const errMsg =
-        e?.message || e?.response?.data?.message || "Delete failed";
-      toast.error(errMsg);
+      toast.error(e.message || "Delete failed");
+    } finally {
+      setDeleteDialogOpen(false);
+      setItemToDelete(null);
     }
-    handleMenuClose();
   };
 
   const handleFormSubmit = async (formData) => {
     try {
       if (editItem) {
         await categoryService.updateCategory(editItem._id, formData);
-        toast.success("Category updated successfully");
+        toast.success("Category updated");
       } else {
         await categoryService.createCategory(formData);
-        toast.success("Category created successfully");
+        toast.success("Category created");
       }
       setOpenModal(false);
       fetchData();
     } catch (e) {
-      console.error("Save error:", e);
-      const errMsg = e?.message || e?.response?.data?.message || "Save failed";
-      toast.error(errMsg);
+      toast.error(e?.response?.data?.message || "Operation failed");
     }
   };
 
-  // Status color helper
-  const statusColor = (s) =>
-    String(s).toLowerCase() === "active" ? "success" : "warning";
-
-  // ✅ DataGrid Columns
   const columns = [
     {
       field: "icon",
-      headerName: "",
-      width: 70,
+      headerName: "Icon",
+      width: 60,
       sortable: false,
-      filterable: false,
       renderCell: (params) => (
         <Avatar
           sx={{
             bgcolor: params.row.color || "#1976d2",
-            width: 40,
-            height: 40,
+            width: 32,
+            height: 32,
+            fontSize: "1rem",
           }}
         >
           {params.row.icon || "✨"}
@@ -211,8 +196,8 @@ const Categories = () => {
     },
     {
       field: "name",
-      headerName: "Category Name",
-      width: 220,
+      headerName: "Name",
+      width: 200,
       renderCell: (p) => (
         <Typography variant="body2" fontWeight={600}>
           {p.value}
@@ -222,7 +207,8 @@ const Categories = () => {
     {
       field: "description",
       headerName: "Description",
-      width: 320,
+      flex: 1,
+      minWidth: 250,
       renderCell: (p) => (
         <Typography variant="caption" color="text.secondary" noWrap>
           {p.value || "—"}
@@ -232,26 +218,23 @@ const Categories = () => {
     {
       field: "productsCount",
       headerName: "Products",
-      width: 120,
+      width: 100,
       align: "center",
       headerAlign: "center",
       renderCell: (p) => (
-        <Chip
-          label={p.value || 0}
-          size="small"
-          color="primary"
-          variant="outlined"
-        />
+        <Chip label={p.value || 0} size="small" variant="outlined" />
       ),
     },
     {
       field: "status",
       headerName: "Status",
-      width: 120,
+      width: 110,
       renderCell: (p) => (
         <Chip
           label={p.value}
-          color={statusColor(p.value)}
+          color={
+            String(p.value).toLowerCase() === "active" ? "success" : "default"
+          }
           size="small"
           sx={{ textTransform: "capitalize" }}
         />
@@ -260,31 +243,24 @@ const Categories = () => {
     {
       field: "createdAt",
       headerName: "Created",
-      width: 140,
-      renderCell: (params) => {
-        const date = params.row.createdAt;
-        if (!date) return <Typography variant="caption">—</Typography>;
-        try {
-          return (
-            <Typography variant="caption">
-              {new Date(date).toLocaleDateString("en-IN", {
+      width: 130,
+      renderCell: (p) => (
+        <Typography variant="caption">
+          {p.value
+            ? new Date(p.value).toLocaleDateString("en-IN", {
                 day: "2-digit",
                 month: "short",
                 year: "numeric",
-              })}
-            </Typography>
-          );
-        } catch {
-          return <Typography variant="caption">—</Typography>;
-        }
-      },
+              })
+            : "-"}
+        </Typography>
+      ),
     },
     {
       field: "actions",
       headerName: "Actions",
-      width: 80,
+      width: 70,
       sortable: false,
-      filterable: false,
       renderCell: (params) => (
         <IconButton
           onClick={(e) => handleMenuClick(e, params.row)}
@@ -298,173 +274,136 @@ const Categories = () => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.4 }}
     >
       <Box sx={{ p: 3 }}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            mb: 3,
-          }}
-        >
-          <Typography variant="h4" fontWeight="bold">
-            Categories Management
-          </Typography>
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="outlined"
-              startIcon={<AutoFixHigh />}
-              onClick={handleFixIcons}
+        {/* --- Header: Single Row --- */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+            <Box
+              sx={{
+                display: "flex",
+                gap: 2,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
             >
-              Fix Icons
-            </Button>
-            <Button variant="contained" startIcon={<Add />} onClick={handleAdd}>
-              Add Category
-            </Button>
-          </Stack>
-        </Box>
+              {/* Search */}
+              <TextField
+                placeholder="Search categories..."
+                size="small"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search fontSize="small" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => setSearchTerm("")}
+                      >
+                        <Clear fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ flexGrow: 1, minWidth: 220 }}
+              />
 
-        {/* Search and Filters Card */}
-        <Card sx={{ mb: 2 }}>
-          <CardContent>
-            <Stack spacing={2}>
-              {/* Search Bar - Searches name and description */}
-              <Stack direction="row" spacing={2} alignItems="center">
-                <TextField
-                  placeholder="Search by name or description..."
-                  size="small"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Search />
-                      </InputAdornment>
-                    ),
-                    endAdornment: searchTerm && (
-                      <InputAdornment position="end">
-                        <IconButton
-                          size="small"
-                          onClick={() => setSearchTerm("")}
-                        >
-                          <Clear />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ flexGrow: 1, minWidth: 260 }}
-                />
-
-                <Button
-                  variant="outlined"
-                  startIcon={<FilterList />}
-                  onClick={() => setShowFilters(!showFilters)}
-                  size="small"
+              {/* Filter */}
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={filterStatus}
+                  label="Status"
+                  onChange={(e) => setFilterStatus(e.target.value)}
                 >
-                  {showFilters ? "Hide" : "Show"} Filters
-                </Button>
-              </Stack>
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="inactive">Inactive</MenuItem>
+                </Select>
+              </FormControl>
 
-              {/* Clear Filters Button */}
-              {(searchTerm || filterStatus) && (
-                <Button
-                  variant="text"
-                  startIcon={<Clear />}
-                  onClick={handleClearFilters}
-                  size="small"
-                  sx={{ alignSelf: "flex-start" }}
-                >
-                  Clear All Filters
-                </Button>
-              )}
-
-              {/* Filter Options */}
-              {showFilters && (
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                  <InputLabel>Status</InputLabel>
-                  <Select
-                    value={filterStatus}
-                    label="Status"
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                  >
-                    <MenuItem value="">All Status</MenuItem>
-                    <MenuItem value="active">Active</MenuItem>
-                    <MenuItem value="inactive">Inactive</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
-            </Stack>
+              {/* Add Button */}
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={handleAdd}
+                sx={{ whiteSpace: "nowrap", height: 40 }}
+              >
+                Add Category
+              </Button>
+            </Box>
           </CardContent>
         </Card>
 
-        {/* DataGrid Card */}
+        {/* --- Table --- */}
         <Card>
-          <Box sx={{ width: "100%" }}>
-            <DataGrid
-              rows={rows}
-              columns={columns}
-              getRowId={(row) => row._id}
-              rowCount={rowCount}
-              loading={loading}
-              pagination
-              paginationMode="server"
-              paginationModel={paginationModel}
-              onPaginationModelChange={setPaginationModel}
-              pageSizeOptions={[10, 20, 50]}
-              sortingMode="server"
-              sortModel={sortModel}
-              onSortModelChange={setSortModel}
-              disableRowSelectionOnClick
-              autoHeight
-              sx={{
-                border: "none",
-                "& .MuiDataGrid-columnHeaders": {
-                  backgroundColor: "rgba(76, 175, 80, 0.05)",
-                },
-                "& .MuiDataGrid-cell": {
-                  display: "flex",
-                  alignItems: "center",
-                },
-              }}
-            />
-          </Box>
+          <DataGrid
+            rows={rows}
+            columns={columns}
+            getRowId={(row) => row._id}
+            rowCount={rowCount}
+            loading={loading}
+            paginationMode="server"
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            pageSizeOptions={[10, 20, 50]}
+            sortingMode="server"
+            sortModel={sortModel}
+            onSortModelChange={setSortModel}
+            disableRowSelectionOnClick
+            autoHeight
+            sx={{
+              border: "none",
+              "& .MuiDataGrid-columnHeaders": {
+                backgroundColor: "rgba(76, 175, 80, 0.05)",
+              },
+            }}
+          />
         </Card>
 
-        {/* Context Menu */}
+        {/* --- Menus & Modals --- */}
         <Menu
           anchorEl={anchorEl}
           open={Boolean(anchorEl)}
           onClose={handleMenuClose}
         >
           <MenuItem onClick={() => handleEdit(selectedRow)}>
-            <Edit sx={{ mr: 1 }} fontSize="small" />
-            Edit
+            <Edit sx={{ mr: 1, fontSize: 20 }} /> Edit
           </MenuItem>
           <MenuItem
-            onClick={() => selectedRow && handleDelete(selectedRow._id)}
+            onClick={() => confirmDelete(selectedRow)}
             sx={{ color: "error.main" }}
           >
-            <Delete sx={{ mr: 1 }} fontSize="small" />
-            Delete
+            <Delete sx={{ mr: 1, fontSize: 20 }} /> Delete
           </MenuItem>
         </Menu>
 
-        {/* Category Form Modal */}
         <FormModal
           open={openModal}
           onClose={() => setOpenModal(false)}
           title={editItem ? "Edit Category" : "Add New Category"}
         >
           <CategoryForm
-            category={editItem}
-            onSuccess={handleFormSubmit}
+            initialData={editItem}
+            onSubmit={handleFormSubmit}
             onCancel={() => setOpenModal(false)}
           />
         </FormModal>
+
+        <DeleteConfirmDialog
+          open={deleteDialogOpen}
+          onClose={() => setDeleteDialogOpen(false)}
+          onConfirm={handleDelete}
+          itemName={itemToDelete?.name}
+        />
       </Box>
     </motion.div>
   );

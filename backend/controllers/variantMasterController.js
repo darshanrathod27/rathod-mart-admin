@@ -10,15 +10,50 @@ export const getVariants = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = Math.min(parseInt(req.query.limit) || 10, 200);
   const skip = (page - 1) * limit;
-  const status = req.query.status || "";
-  const product = req.query.product || "";
-  const search = req.query.search || "";
+
+  const { status, product, search } = req.query;
+  const sortBy = req.query.sortBy || "createdAt";
+  const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
   const query = { isDeleted: false };
+
+  // 1. Exact Filters
   if (status) query.status = status;
   if (product) query.product = product;
+
+  // 2. Advanced Search
   if (search) {
-    query.$or = [{ sku: { $regex: search, $options: "i" } }];
+    const searchRegex = { $regex: search, $options: "i" };
+
+    // A. Find matching Products
+    const matchedProducts = await Product.find({
+      name: searchRegex,
+      isDeleted: { $ne: true },
+    }).select("_id");
+
+    // B. Find matching Sizes
+    const matchedSizes = await ProductSizeMapping.find({
+      sizeName: searchRegex,
+      isDeleted: false,
+    }).select("_id");
+
+    // C. Find matching Colors
+    const matchedColors = await ProductColorMapping.find({
+      colorName: searchRegex,
+      isDeleted: false,
+    }).select("_id");
+
+    const prodIds = matchedProducts.map((p) => p._id);
+    const sizeIds = matchedSizes.map((s) => s._id);
+    const colorIds = matchedColors.map((c) => c._id);
+
+    // D. Construct OR Query
+    query.$or = [
+      { sku: searchRegex }, // Search by SKU
+      { product: { $in: prodIds } }, // Search by Product Name
+      { size: { $in: sizeIds } }, // Search by Size Name
+      { color: { $in: colorIds } }, // Search by Color Name
+    ];
   }
 
   const [variants, total] = await Promise.all([
@@ -26,7 +61,7 @@ export const getVariants = asyncHandler(async (req, res) => {
       .populate("product", "name")
       .populate("size", "sizeName value")
       .populate("color", "colorName value")
-      .sort({ createdAt: -1 })
+      .sort({ [sortBy]: sortOrder })
       .skip(skip)
       .limit(limit)
       .lean(),

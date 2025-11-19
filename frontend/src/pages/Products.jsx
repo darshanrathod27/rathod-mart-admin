@@ -1,5 +1,4 @@
 // frontend/src/pages/Products.jsx
-
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
@@ -20,6 +19,12 @@ import {
   Typography,
   Tooltip,
   Stack,
+  Autocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from "@mui/material";
 import { Rating } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -32,8 +37,8 @@ import {
   Delete,
   Image as ImageIcon,
   Inventory,
-  FilterList,
   Clear,
+  Warning,
 } from "@mui/icons-material";
 import toast from "react-hot-toast";
 import ProductForm from "../components/Forms/ProductForm";
@@ -46,36 +51,52 @@ import { categoryService } from "../services/categoryService";
 import { useDebounce } from "../hooks/useDebounce";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_BASE_URL ||
-  "http://localhost:5000";
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// --- Delete Confirmation Component ---
+const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName }) => (
+  <Dialog open={open} onClose={onClose}>
+    <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Warning color="error" /> Confirm Deletion
+    </DialogTitle>
+    <DialogContent>
+      <DialogContentText>
+        Are you sure you want to delete product <strong>{itemName}</strong>?
+        This action cannot be undone.
+      </DialogContentText>
+    </DialogContent>
+    <DialogActions sx={{ p: 2 }}>
+      <Button onClick={onClose} variant="outlined" color="inherit">
+        Cancel
+      </Button>
+      <Button onClick={onConfirm} variant="contained" color="error">
+        Delete
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
 
 export default function Products() {
-  // State management
+  // --- State Management ---
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState([]); // For dropdown
   const [loading, setLoading] = useState(false);
   const [totalRows, setTotalRows] = useState(0);
 
-  // Pagination - Using paginationModel as per DataGrid best practices
+  // Pagination & Sorting
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-
-  // Sorting
   const [sortModel, setSortModel] = useState([
     { field: "createdAt", sort: "desc" },
   ]);
 
-  // ✅ ADVANCED SEARCH - Searches name, brand, description, price
+  // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 500);
-
-  // Filters
-  const [filterCategory, setFilterCategory] = useState("");
+  const [filterCategory, setFilterCategory] = useState(null);
   const [filterStatus, setFilterStatus] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
 
   // Modals
   const [openForm, setOpenForm] = useState(false);
@@ -87,19 +108,52 @@ export default function Products() {
   const [variantProduct, setVariantProduct] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Menu
+  // Delete State
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState(null);
+
+  // Menus
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [menuRow, setMenuRow] = useState(null);
 
-  // ✅ Fetch Products with Advanced Search
+  // --- Helpers ---
+  const getImageUrl = (img) => {
+    if (!img) return null;
+    if (img.fullImageUrl) return img.fullImageUrl;
+    if (img.fullUrl) return img.fullUrl;
+    if (img.url)
+      return img.url.startsWith("http") ? img.url : `${API_BASE_URL}${img.url}`;
+    return null;
+  };
+
+  // --- Data Fetching ---
+
+  // 1. Fetch Categories for Filter Dropdown
+  useEffect(() => {
+    const loadCats = async () => {
+      try {
+        // Removing strict status filter to ensure all categories load for filtering
+        const res = await categoryService.getCategories({ limit: 1000 });
+        // Ensure we extract the array correctly (handle different API response shapes)
+        const list = Array.isArray(res?.data) ? res.data : res || [];
+        setCategories(list);
+      } catch (err) {
+        console.error("Failed to load categories", err);
+      }
+    };
+    loadCats();
+  }, []);
+
+  // 2. Fetch Products Table Data
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
         page: paginationModel.page + 1,
         limit: paginationModel.pageSize,
-        search: debouncedSearch, // ✅ Searches name, brand, description, price
-        category: filterCategory,
+        search: debouncedSearch,
+        // If filterCategory is an object (from Autocomplete), use _id
+        category: filterCategory ? filterCategory._id || filterCategory.id : "",
         status: filterStatus,
         sortBy: sortModel[0]?.field || "createdAt",
         sortOrder: sortModel[0]?.sort || "desc",
@@ -110,15 +164,10 @@ export default function Products() {
       if (resp.success) {
         const rows = resp.data || [];
         const mapped = rows.map((r) => {
-          // Process images with full URLs
           const images = (r.images || []).map((img) => ({
             ...img,
-            fullImageUrl:
-              img.fullUrl ||
-              img.fullImageUrl ||
-              (img.url ? `${API_BASE_URL}${img.url}` : img.imageUrl),
+            fullImageUrl: getImageUrl(img),
           }));
-
           return {
             ...r,
             images,
@@ -126,13 +175,11 @@ export default function Products() {
             stock: r.stock ?? r.totalStock ?? 0,
           };
         });
-
         setProducts(mapped);
         setTotalRows(resp.pagination?.total || 0);
       }
     } catch (e) {
-      console.error("Fetch products error:", e);
-      toast.error(e.message || "Failed to load products");
+      toast.error("Failed to load products");
     } finally {
       setLoading(false);
     }
@@ -144,60 +191,12 @@ export default function Products() {
     sortModel,
   ]);
 
-  // ✅ Fetch Categories
-  const fetchCategories = useCallback(async () => {
-    try {
-      const res = await categoryService.getCategories({
-        limit: 200,
-        status: "active",
-      });
-      setCategories(res.data?.categories || res.data || []);
-    } catch (err) {
-      console.error("Categories fetch error:", err);
-    }
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    fetchCategories();
-  }, [fetchCategories]);
-
-  // Fetch products when dependencies change
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Listen for inventory updates
-  useEffect(() => {
-    const handleInventoryUpdate = () => {
-      fetchProducts();
-    };
+  // --- Handlers ---
 
-    window.addEventListener("inventory:updated", handleInventoryUpdate);
-    return () => {
-      window.removeEventListener("inventory:updated", handleInventoryUpdate);
-    };
-  }, [fetchProducts]);
-
-  // ✅ Clear All Filters
-  const handleClearFilters = () => {
-    setSearchTerm("");
-    setFilterCategory("");
-    setFilterStatus("");
-    setPaginationModel({ page: 0, pageSize: 10 });
-  };
-
-  // ✅ Get Image URL Helper
-  const getImageUrl = (img) => {
-    if (!img) return null;
-    if (img.fullImageUrl) return img.fullImageUrl;
-    if (img.fullUrl) return img.fullUrl;
-    if (img.url)
-      return img.url.startsWith("http") ? img.url : `${API_BASE_URL}${img.url}`;
-    return null;
-  };
-
-  // ✅ Menu Handlers
   const openMenu = (event, row) => {
     event.stopPropagation();
     setMenuAnchor(event.currentTarget);
@@ -209,35 +208,48 @@ export default function Products() {
     setMenuRow(null);
   };
 
-  // ✅ Create/Update Product
   const handleCreateOrUpdate = async (formData, { isEdit, id }) => {
     setSubmitting(true);
     try {
       if (isEdit && id) {
         await productService.updateProduct(id, formData);
-        toast.success("Product updated successfully");
-        await fetchProducts();
+        toast.success("Product updated");
       } else {
         await productService.createProduct(formData);
-        toast.success("Product created successfully");
-        // Reset to page 0 after creation
-        if (paginationModel.page !== 0) {
+        toast.success("Product created");
+        if (paginationModel.page !== 0)
           setPaginationModel((prev) => ({ ...prev, page: 0 }));
-        } else {
-          await fetchProducts();
-        }
       }
       setOpenForm(false);
       setEditProduct(null);
+      fetchProducts();
     } catch (e) {
-      console.error("Save product error:", e);
       toast.error(e.message || "Save failed");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ✅ Open Edit Modal
+  const confirmDelete = (row) => {
+    setProductToDelete(row);
+    setDeleteDialogOpen(true);
+    closeMenu();
+  };
+
+  const handleDelete = async () => {
+    if (!productToDelete) return;
+    try {
+      await productService.deleteProduct(productToDelete._id);
+      toast.success("Product deleted");
+      fetchProducts();
+    } catch (err) {
+      toast.error(err.message || "Delete failed");
+    } finally {
+      setDeleteDialogOpen(false);
+      setProductToDelete(null);
+    }
+  };
+
   const handleOpenEdit = async (row) => {
     closeMenu();
     try {
@@ -245,12 +257,10 @@ export default function Products() {
       setEditProduct(resp.data);
       setOpenForm(true);
     } catch (err) {
-      console.error("Load product error:", err);
       toast.error("Failed to load product");
     }
   };
 
-  // ✅ View Product Details
   const handleView = async (row) => {
     closeMenu();
     try {
@@ -262,68 +272,29 @@ export default function Products() {
       }));
       setViewProduct(p);
     } catch (err) {
-      console.error("View product error:", err);
       toast.error("Failed to load product");
     }
   };
 
-  // ✅ Manage Images
-  const handleOpenImages = (row) => {
-    setImageModalProduct(row);
-    setOpenImageModal(true);
-    closeMenu();
-  };
-
-  // ✅ Manage Variants/Stock
-  const handleOpenVariants = (row) => {
-    setVariantProduct(row);
-    setOpenVariantModal(true);
-    closeMenu();
-  };
-
-  // ✅ Delete Product
-  const handleDelete = async (row) => {
-    closeMenu();
-    if (!window.confirm("Delete this product? This action cannot be undone."))
-      return;
-
-    try {
-      await productService.deleteProduct(row._id);
-      toast.success("Product deleted successfully");
-      await fetchProducts();
-    } catch (err) {
-      console.error("Delete product error:", err);
-      toast.error(err.message || "Delete failed");
-    }
-  };
-
-  // ✅ DataGrid Columns
+  // --- DataGrid Columns ---
   const columns = [
     {
       field: "images",
       headerName: "Image",
-      width: 100,
+      width: 70,
       sortable: false,
       renderCell: (params) => {
         const images = params.value || [];
         const primary = images.find((i) => i.isPrimary) || images[0];
-        const src = primary ? getImageUrl(primary) : null;
+        const src = primary ? primary.fullImageUrl : null;
         return (
-          <Tooltip title={`${images.length} image(s)`}>
-            <Avatar
-              src={src}
-              variant="rounded"
-              sx={{
-                width: 64,
-                height: 64,
-                bgcolor: "grey.200",
-                border: "2px solid",
-                borderColor: "grey.300",
-              }}
-            >
-              <ImageIcon sx={{ fontSize: 28, color: "grey.600" }} />
-            </Avatar>
-          </Tooltip>
+          <Avatar
+            src={src}
+            variant="rounded"
+            sx={{ width: 40, height: 40, bgcolor: "grey.200" }}
+          >
+            <ImageIcon sx={{ fontSize: 20, color: "grey.500" }} />
+          </Avatar>
         );
       },
     },
@@ -331,38 +302,28 @@ export default function Products() {
       field: "name",
       headerName: "Product",
       flex: 1,
-      minWidth: 260,
+      minWidth: 240,
       renderCell: (params) => {
         const categoryLabel =
           params.row.category?.name || params.row.category || "Uncategorized";
         return (
           <Box>
             <Typography
-              variant="body1"
-              sx={{ fontWeight: 700, color: "text.primary", mb: 0.5 }}
+              variant="body2"
+              fontWeight={700}
               noWrap
               title={params.value}
             >
               {params.value}
             </Typography>
-
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              sx={{ mb: 0.5 }}
-            >
+            {/* Removed duplicate Brand text from here */}
+            <Stack direction="row" spacing={1} alignItems="center">
               <Chip
-                size="small"
                 label={categoryLabel}
+                size="small"
                 variant="outlined"
-                sx={{ textTransform: "capitalize", fontWeight: 600 }}
+                sx={{ height: 18, fontSize: "0.65rem" }}
               />
-              {params.row.brand && (
-                <Typography variant="caption" color="text.secondary">
-                  {params.row.brand}
-                </Typography>
-              )}
             </Stack>
           </Box>
         );
@@ -371,7 +332,7 @@ export default function Products() {
     {
       field: "brand",
       headerName: "Brand",
-      width: 130,
+      width: 120,
       renderCell: (p) => (
         <Typography variant="body2">{p.value || "-"}</Typography>
       ),
@@ -379,7 +340,7 @@ export default function Products() {
     {
       field: "shortDescription",
       headerName: "Description",
-      width: 200,
+      width: 220,
       sortable: false,
       renderCell: (params) => (
         <Tooltip title={params.value || ""}>
@@ -388,10 +349,11 @@ export default function Products() {
             color="text.secondary"
             sx={{
               display: "-webkit-box",
-              WebkitLineClamp: 3,
+              WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
               whiteSpace: "normal",
+              lineHeight: "1.2em",
             }}
           >
             {params.value || "—"}
@@ -402,7 +364,7 @@ export default function Products() {
     {
       field: "basePrice",
       headerName: "Price",
-      width: 110,
+      width: 100,
       renderCell: (p) => (
         <Typography variant="body2" fontWeight={600}>
           ₹{(p.value || 0).toLocaleString("en-IN")}
@@ -426,25 +388,20 @@ export default function Products() {
     {
       field: "stock",
       headerName: "Stock",
-      width: 100,
-      renderCell: (params) => {
-        const stockCount = params.row.stock ?? params.row.totalStock ?? 0;
-        return (
-          <Chip
-            label={stockCount}
-            size="small"
-            color={
-              stockCount > 10 ? "success" : stockCount > 0 ? "warning" : "error"
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              setVariantProduct(params.row);
-              setOpenVariantModal(true);
-            }}
-            sx={{ cursor: "pointer", fontWeight: 600 }}
-          />
-        );
-      },
+      width: 90,
+      renderCell: (p) => (
+        <Chip
+          label={p.value}
+          size="small"
+          color={p.value > 10 ? "success" : p.value > 0 ? "warning" : "error"}
+          onClick={(e) => {
+            e.stopPropagation();
+            setVariantProduct(p.row);
+            setOpenVariantModal(true);
+          }}
+          sx={{ cursor: "pointer", fontWeight: 600, height: 24 }}
+        />
+      ),
     },
     {
       field: "status",
@@ -462,6 +419,7 @@ export default function Products() {
             label={p.value}
             color={colorMap[p.value] || "default"}
             size="small"
+            sx={{ textTransform: "capitalize" }}
           />
         );
       },
@@ -469,29 +427,23 @@ export default function Products() {
     {
       field: "createdAt",
       headerName: "Created",
-      width: 150,
-      renderCell: (params) => {
-        const date = params.row.createdAt || params.row.updatedAt;
-        if (!date) return <Typography variant="caption">-</Typography>;
-        try {
-          return (
-            <Typography variant="caption">
-              {new Date(date).toLocaleDateString("en-IN", {
+      width: 110,
+      renderCell: (params) => (
+        <Typography variant="caption">
+          {params.row.createdAt
+            ? new Date(params.row.createdAt).toLocaleDateString("en-IN", {
                 day: "2-digit",
                 month: "short",
-                year: "numeric",
-              })}
-            </Typography>
-          );
-        } catch {
-          return <Typography variant="caption">-</Typography>;
-        }
-      },
+                year: "2-digit",
+              })
+            : "-"}
+        </Typography>
+      ),
     },
     {
       field: "actions",
       headerName: "Actions",
-      width: 80,
+      width: 70,
       sortable: false,
       renderCell: (params) => (
         <IconButton onClick={(e) => openMenu(e, params.row)} size="small">
@@ -503,239 +455,200 @@ export default function Products() {
 
   return (
     <Box sx={{ p: 2 }}>
-      {/* Search and Filters Card */}
+      {/* --- Header Control --- */}
       <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Stack spacing={2}>
-            {/* Search Bar - Searches name, brand, description, price */}
-            <Stack direction="row" spacing={2} alignItems="center">
-              <TextField
-                placeholder="Search by name, brand, description, or price (e.g., 200)..."
-                size="small"
-                sx={{ flex: 1 }}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Search />
-                    </InputAdornment>
-                  ),
-                  endAdornment: searchTerm && (
-                    <InputAdornment position="end">
-                      <IconButton
-                        size="small"
-                        onClick={() => setSearchTerm("")}
-                      >
-                        <Clear />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
+        <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+          <Box
+            sx={{
+              display: "flex",
+              gap: 2,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Search */}
+            <TextField
+              placeholder="Search product, brand..."
+              size="small"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchTerm("")}>
+                      <Clear fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ flexGrow: 1, minWidth: 200 }}
+            />
 
-              <Button
-                variant="outlined"
-                startIcon={<FilterList />}
-                onClick={() => setShowFilters(!showFilters)}
-                size="small"
+            {/* Advanced Category Filter */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 220 }}
+              options={categories}
+              getOptionLabel={(option) => option.name || ""}
+              value={filterCategory}
+              onChange={(event, newValue) => setFilterCategory(newValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Filter Category"
+                  placeholder="Select category"
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option._id === value._id}
+            />
+
+            {/* Status Filter */}
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={filterStatus}
+                label="Status"
+                onChange={(e) => setFilterStatus(e.target.value)}
               >
-                {showFilters ? "Hide" : "Show"} Filters
-              </Button>
+                <MenuItem value="">All Status</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="draft">Draft</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+              </Select>
+            </FormControl>
 
-              <Button
-                variant="contained"
-                startIcon={<Add />}
-                onClick={() => {
-                  setEditProduct(null);
-                  setOpenForm(true);
-                }}
-              >
-                Add Product
-              </Button>
-            </Stack>
-
-            {/* Clear Filters Button */}
-            {(searchTerm || filterCategory || filterStatus) && (
-              <Button
-                variant="text"
-                startIcon={<Clear />}
-                onClick={handleClearFilters}
-                size="small"
-                sx={{ alignSelf: "flex-start" }}
-              >
-                Clear All Filters
-              </Button>
-            )}
-
-            {/* Filter Options */}
-            {showFilters && (
-              <Stack direction="row" spacing={2}>
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                  <InputLabel>Category</InputLabel>
-                  <Select
-                    value={filterCategory}
-                    label="Category"
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                  >
-                    <MenuItem value="">All Categories</MenuItem>
-                    {categories.map((c) => (
-                      <MenuItem key={c._id} value={c._id}>
-                        {c.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                  <InputLabel>Status</InputLabel>
-                  <Select
-                    value={filterStatus}
-                    label="Status"
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                  >
-                    <MenuItem value="">All Status</MenuItem>
-                    <MenuItem value="active">Active</MenuItem>
-                    <MenuItem value="draft">Draft</MenuItem>
-                    <MenuItem value="inactive">Inactive</MenuItem>
-                    <MenuItem value="archived">Archived</MenuItem>
-                  </Select>
-                </FormControl>
-              </Stack>
-            )}
-          </Stack>
+            {/* Add Button */}
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => {
+                setEditProduct(null);
+                setOpenForm(true);
+              }}
+              sx={{ whiteSpace: "nowrap", height: 40 }}
+            >
+              Add Product
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* DataGrid Card */}
+      {/* --- Data Table --- */}
       <Card>
-        <Box sx={{ width: "100%" }}>
-          <DataGrid
-            rows={products}
-            columns={columns}
-            getRowId={(r) => r._id}
-            rowCount={totalRows}
-            pagination
-            paginationMode="server"
-            paginationModel={paginationModel}
-            onPaginationModelChange={setPaginationModel}
-            pageSizeOptions={[10, 20, 50, 100]}
-            sortingMode="server"
-            sortModel={sortModel}
-            onSortModelChange={setSortModel}
-            loading={loading}
-            disableRowSelectionOnClick
-            rowHeight={110}
-            sx={{
-              "& .MuiDataGrid-cell": {
-                display: "flex",
-                alignItems: "center",
-              },
-              "& .MuiDataGrid-row:hover": {
-                backgroundColor: "rgba(0, 0, 0, 0.04)",
-              },
-            }}
-          />
-        </Box>
+        <DataGrid
+          rows={products}
+          columns={columns}
+          getRowId={(r) => r._id}
+          rowCount={totalRows}
+          paginationMode="server"
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          pageSizeOptions={[10, 20, 50, 100]}
+          sortingMode="server"
+          sortModel={sortModel}
+          onSortModelChange={setSortModel}
+          loading={loading}
+          disableRowSelectionOnClick
+          rowHeight={70}
+          sx={{
+            border: "none",
+            "& .MuiDataGrid-columnHeaders": {
+              backgroundColor: "rgba(76, 175, 80, 0.05)",
+            },
+            "& .MuiDataGrid-cell": { display: "flex", alignItems: "center" },
+          }}
+        />
       </Card>
 
-      {/* Actions Menu */}
+      {/* --- Menus & Modals --- */}
       <Menu
         anchorEl={menuAnchor}
         open={Boolean(menuAnchor)}
         onClose={closeMenu}
       >
         <MItem onClick={() => handleView(menuRow)}>
-          <Visibility sx={{ mr: 1 }} fontSize="small" />
-          View Details
+          <Visibility sx={{ mr: 1, fontSize: 20 }} /> View
         </MItem>
         <MItem onClick={() => handleOpenEdit(menuRow)}>
-          <Edit sx={{ mr: 1 }} fontSize="small" />
-          Edit Product
-        </MItem>
-        <MItem onClick={() => handleOpenImages(menuRow)}>
-          <ImageIcon sx={{ mr: 1 }} fontSize="small" />
-          Manage Images
-        </MItem>
-        <MItem onClick={() => handleOpenVariants(menuRow)}>
-          <Inventory sx={{ mr: 1 }} fontSize="small" />
-          Manage Stock
+          <Edit sx={{ mr: 1, fontSize: 20 }} /> Edit
         </MItem>
         <MItem
-          onClick={() => handleDelete(menuRow)}
+          onClick={() => {
+            setImageModalProduct(menuRow);
+            setOpenImageModal(true);
+            closeMenu();
+          }}
+        >
+          <ImageIcon sx={{ mr: 1, fontSize: 20 }} /> Images
+        </MItem>
+        <MItem
+          onClick={() => {
+            setVariantProduct(menuRow);
+            setOpenVariantModal(true);
+            closeMenu();
+          }}
+        >
+          <Inventory sx={{ mr: 1, fontSize: 20 }} /> Stock
+        </MItem>
+        <MItem
+          onClick={() => confirmDelete(menuRow)}
           sx={{ color: "error.main" }}
         >
-          <Delete sx={{ mr: 1 }} fontSize="small" />
-          Delete
+          <Delete sx={{ mr: 1, fontSize: 20 }} /> Delete
         </MItem>
       </Menu>
 
-      {/* Product Form Modal */}
       <FormModal
         open={openForm}
-        onClose={() => {
-          setOpenForm(false);
-          setEditProduct(null);
-        }}
+        onClose={() => setOpenForm(false)}
         title={editProduct ? "Edit Product" : "Add New Product"}
         maxWidth="lg"
       >
         <ProductForm
           initialData={editProduct}
           onSubmit={handleCreateOrUpdate}
-          onCancel={() => {
-            setOpenForm(false);
-            setEditProduct(null);
-          }}
+          onCancel={() => setOpenForm(false)}
           categories={categories}
           submitting={submitting}
           embedded={true}
         />
       </FormModal>
 
-      {/* Product View Modal */}
       {viewProduct && (
         <ProductViewModal
           open={Boolean(viewProduct)}
           onClose={() => setViewProduct(null)}
           product={viewProduct}
-          onEdit={(prod) => {
-            setViewProduct(null);
-            handleOpenEdit(prod);
-          }}
-          onManageStock={(prod) => {
-            setViewProduct(null);
-            setVariantProduct(prod);
-            setOpenVariantModal(true);
-          }}
         />
       )}
-
-      {/* Image Upload Modal */}
-      {openImageModal && imageModalProduct && (
+      {openImageModal && (
         <ImageUploadModal
           open={openImageModal}
-          onClose={() => {
-            setOpenImageModal(false);
-            setImageModalProduct(null);
-          }}
+          onClose={() => setOpenImageModal(false)}
           product={imageModalProduct}
-          onUploadSuccess={() => fetchProducts()}
+          onUploadSuccess={fetchProducts}
         />
       )}
-
-      {/* Variant Stock Modal */}
       {variantProduct && (
         <VariantStockModal
           open={openVariantModal}
-          onClose={() => {
-            setOpenVariantModal(false);
-            setVariantProduct(null);
-          }}
+          onClose={() => setOpenVariantModal(false)}
           product={variantProduct}
-          onSaved={() => fetchProducts()}
+          onSaved={fetchProducts}
         />
       )}
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDelete}
+        itemName={productToDelete?.name}
+      />
     </Box>
   );
 }

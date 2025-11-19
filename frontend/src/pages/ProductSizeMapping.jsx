@@ -1,4 +1,4 @@
-// src/pages/ProductSizeMapping.jsx
+// frontend/src/pages/ProductSizeMapping.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
@@ -11,20 +11,26 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Alert,
   FormControl,
   InputLabel,
   Select,
   Typography,
+  Autocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
   Add,
   Search,
-  FilterList,
   MoreVert,
   Edit,
   Delete,
+  Clear,
+  Warning,
 } from "@mui/icons-material";
 import FormModal from "../components/Modals/FormModal";
 import ProductSizeMappingForm from "../components/Forms/ProductSizeMappingForm";
@@ -42,97 +48,140 @@ const fmtDate = (d) =>
       })
     : "-";
 
+// --- Delete Confirmation Component ---
+const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName }) => (
+  <Dialog open={open} onClose={onClose}>
+    <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Warning color="error" /> Confirm Deletion
+    </DialogTitle>
+    <DialogContent>
+      <DialogContentText>
+        Are you sure you want to delete size mapping for{" "}
+        <strong>{itemName}</strong>? This action cannot be undone.
+      </DialogContentText>
+    </DialogContent>
+    <DialogActions sx={{ p: 2 }}>
+      <Button onClick={onClose} variant="outlined" color="inherit">
+        Cancel
+      </Button>
+      <Button onClick={onConfirm} variant="contained" color="error">
+        Delete
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
+
 const ProductSizeMapping = () => {
+  // Data State
   const [mappings, setMappings] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [rowCount, setRowCount] = useState(0);
 
+  // Pagination
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-  const [rowCount, setRowCount] = useState(0);
 
+  // Search & Filter
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterProduct, setFilterProduct] = useState("");
-
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterProduct, setFilterProduct] = useState(null);
 
+  // Modals & Dialogs
   const [openModal, setOpenModal] = useState(false);
   const [editMapping, setEditMapping] = useState(null);
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [mappingToDelete, setMappingToDelete] = useState(null);
+
+  // Menu
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedMapping, setSelectedMapping] = useState(null);
 
+  // Fetch Products for Filter (using Autocomplete)
+  useEffect(() => {
+    const fetchProductsForFilter = async () => {
+      try {
+        // Getting all active/draft products for filter dropdown
+        const res = await productService.getProducts({ limit: 1000 });
+        const list = Array.isArray(res?.data) ? res.data : res || [];
+        setProducts(list);
+      } catch (err) {
+        console.error("Product fetch error:", err);
+      }
+    };
+    fetchProductsForFilter();
+  }, []);
+
+  // Fetch Mappings (with search & filter)
   const fetchMappings = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
       const { mappings, pagination } =
         await productSizeMappingService.getSizeMappings({
           page: paginationModel.page + 1,
           limit: paginationModel.pageSize,
           search: debouncedSearchTerm,
           status: filterStatus,
-          product: filterProduct,
+          // Use ID if filterProduct is selected
+          product: filterProduct ? filterProduct._id || filterProduct.id : "",
         });
       setMappings(Array.isArray(mappings) ? mappings : []);
       setRowCount(pagination?.total || 0);
     } catch (err) {
-      setError(err.message || "Failed to load mappings. Please try again.");
-      toast.error(err.message || "Failed to fetch size mappings");
+      toast.error("Failed to fetch size mappings");
     } finally {
       setLoading(false);
     }
   }, [paginationModel, debouncedSearchTerm, filterStatus, filterProduct]);
 
   useEffect(() => {
-    const fetchProductsForFilter = async () => {
-      try {
-        const res = await productService.getProducts({
-          limit: 1000,
-          status: "active",
-        });
-        let list = [];
-        if (Array.isArray(res?.data)) list = res.data;
-        else if (Array.isArray(res?.data?.products)) list = res.data.products;
-        else if (Array.isArray(res?.products)) list = res.products;
-        else if (Array.isArray(res)) list = res;
-        setProducts(list || []);
-      } catch (err) {
-        toast.error("Could not load products for filter.");
-        setProducts([]);
-      }
-    };
-    fetchProductsForFilter();
-  }, []);
-
-  useEffect(() => {
     fetchMappings();
   }, [fetchMappings]);
 
+  // Handlers
   const handleAddMapping = () => {
     setEditMapping(null);
     setOpenModal(true);
   };
+
   const handleEditMapping = (mapping) => {
     setEditMapping(mapping);
     setOpenModal(true);
     handleMenuClose();
   };
+
   const handleMenuClick = (event, mapping) => {
     setAnchorEl(event.currentTarget);
     setSelectedMapping(mapping);
   };
+
   const handleMenuClose = () => {
     setAnchorEl(null);
     setSelectedMapping(null);
   };
-  const handleFilter = () => {
-    setPaginationModel((p) => ({ ...p, page: 0 }));
-    fetchMappings();
-    toast.success("Filters applied!");
+
+  const confirmDelete = (mapping) => {
+    setMappingToDelete(mapping);
+    setDeleteDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleDeleteMapping = async () => {
+    if (!mappingToDelete) return;
+    try {
+      await productSizeMappingService.deleteSizeMapping(mappingToDelete._id);
+      toast.success("Mapping deleted successfully!");
+      await fetchMappings();
+    } catch (error) {
+      toast.error(error.message || "Delete failed");
+    } finally {
+      setDeleteDialogOpen(false);
+      setMappingToDelete(null);
+    }
   };
 
   const handleFormSubmit = async (formData) => {
@@ -155,25 +204,12 @@ const ProductSizeMapping = () => {
     }
   };
 
-  const handleDeleteMapping = async (mappingId) => {
-    if (!mappingId) return;
-    if (!window.confirm("Are you sure you want to delete this mapping?"))
-      return;
-    try {
-      await productSizeMappingService.deleteSizeMapping(mappingId);
-      toast.success("Mapping deleted successfully!");
-      await fetchMappings();
-    } catch (error) {
-      toast.error(error.message || "Delete failed");
-    }
-    handleMenuClose();
-  };
-
   const columns = [
     {
       field: "productName",
       headerName: "Product Name",
-      width: 260,
+      flex: 1,
+      minWidth: 220,
       sortable: false,
       renderCell: (p) => (
         <Typography variant="body2" fontWeight={600}>
@@ -181,8 +217,8 @@ const ProductSizeMapping = () => {
         </Typography>
       ),
     },
-    { field: "sizeName", headerName: "Size Name", width: 160 },
-    { field: "value", headerName: "Size Value", width: 160 },
+    { field: "sizeName", headerName: "Size Name", width: 150 },
+    { field: "value", headerName: "Size Value", width: 150 },
     {
       field: "status",
       headerName: "Status",
@@ -196,6 +232,7 @@ const ProductSizeMapping = () => {
               : "default"
           }
           size="small"
+          sx={{ textTransform: "capitalize" }}
         />
       ),
     },
@@ -214,7 +251,6 @@ const ProductSizeMapping = () => {
       headerName: "Actions",
       width: 80,
       sortable: false,
-      filterable: false,
       renderCell: (p) => (
         <IconButton onClick={(e) => handleMenuClick(e, p.row)} size="small">
           <MoreVert />
@@ -223,21 +259,11 @@ const ProductSizeMapping = () => {
     },
   ];
 
-  if (error) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">{error}</Alert>
-        <Button onClick={fetchMappings} sx={{ mt: 2 }}>
-          Retry
-        </Button>
-      </Box>
-    );
-  }
-
   return (
-    <Box>
+    <Box sx={{ p: 2 }}>
+      {/* --- Header: Single Row --- */}
       <Card sx={{ mb: 3 }}>
-        <CardContent>
+        <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
           <Box
             sx={{
               display: "flex",
@@ -246,37 +272,48 @@ const ProductSizeMapping = () => {
               alignItems: "center",
             }}
           >
+            {/* Search (Now searches Product Name too) */}
             <TextField
-              placeholder="Search by size name..."
+              placeholder="Search size or product..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search />
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchTerm("")}>
+                      <Clear fontSize="small" />
+                    </IconButton>
                   </InputAdornment>
                 ),
               }}
-              sx={{ flexGrow: 1, minWidth: 250 }}
+              sx={{ flexGrow: 1, minWidth: 240 }}
               size="small"
             />
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel>Filter By Product</InputLabel>
-              <Select
-                value={filterProduct}
-                onChange={(e) => setFilterProduct(e.target.value)}
-                label="Filter By Product"
-              >
-                <MenuItem value="">
-                  <em>All Products</em>
-                </MenuItem>
-                {(products || []).map((p) => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+
+            {/* Filter: Product (Autocomplete) */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 220 }}
+              options={products}
+              getOptionLabel={(option) => option.name || ""}
+              value={filterProduct}
+              onChange={(event, newValue) => setFilterProduct(newValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Filter By Product"
+                  placeholder="Select product"
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option._id === value._id}
+            />
+
+            {/* Filter: Status */}
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Status</InputLabel>
               <Select
@@ -289,17 +326,13 @@ const ProductSizeMapping = () => {
                 <MenuItem value="Inactive">Inactive</MenuItem>
               </Select>
             </FormControl>
-            <Button
-              variant="outlined"
-              startIcon={<FilterList />}
-              onClick={handleFilter}
-            >
-              Filter
-            </Button>
+
+            {/* Add Button */}
             <Button
               variant="contained"
               startIcon={<Add />}
               onClick={handleAddMapping}
+              sx={{ whiteSpace: "nowrap", height: 40 }}
             >
               Add Mapping
             </Button>
@@ -307,9 +340,10 @@ const ProductSizeMapping = () => {
         </CardContent>
       </Card>
 
+      {/* --- Data Table --- */}
       <Card>
         <DataGrid
-          rows={Array.isArray(mappings) ? mappings : []}
+          rows={mappings}
           columns={columns}
           getRowId={(row) => row._id}
           loading={loading}
@@ -319,6 +353,7 @@ const ProductSizeMapping = () => {
           onPaginationModelChange={setPaginationModel}
           paginationMode="server"
           disableRowSelectionOnClick
+          autoHeight
           sx={{
             border: "none",
             "& .MuiDataGrid-columnHeaders": {
@@ -328,19 +363,20 @@ const ProductSizeMapping = () => {
         />
       </Card>
 
+      {/* --- Menus & Modals --- */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
         <MenuItem onClick={() => handleEditMapping(selectedMapping)}>
-          <Edit sx={{ mr: 1 }} /> Edit
+          <Edit sx={{ mr: 1, fontSize: 20 }} /> Edit
         </MenuItem>
         <MenuItem
-          onClick={() => handleDeleteMapping(selectedMapping?._id)}
+          onClick={() => confirmDelete(selectedMapping)}
           sx={{ color: "error.main" }}
         >
-          <Delete sx={{ mr: 1 }} /> Delete
+          <Delete sx={{ mr: 1, fontSize: 20 }} /> Delete
         </MenuItem>
       </Menu>
 
@@ -361,6 +397,17 @@ const ProductSizeMapping = () => {
           }}
         />
       </FormModal>
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteMapping}
+        itemName={
+          mappingToDelete
+            ? `${mappingToDelete.sizeName} (${mappingToDelete.product?.name})`
+            : ""
+        }
+      />
     </Box>
   );
 };

@@ -16,21 +16,29 @@ import {
   Select,
   Button,
   Typography,
+  Autocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
   Add,
   Search,
-  FilterList,
   MoreVert,
   Edit,
   Delete,
+  Clear,
+  Warning,
 } from "@mui/icons-material";
 import FormModal from "../components/Modals/FormModal";
-import VariantManager from "../components/Forms/VariantMasterForm";
+import VariantMasterForm from "../components/Forms/VariantMasterForm"; // Ensure correct import name
 import toast from "react-hot-toast";
 import { useDebounce } from "../hooks/useDebounce";
 import { variantMasterService } from "../services/variantMasterService";
+import { productService } from "../services/productService";
 
 const fmtDate = (d) => {
   const date = d || null;
@@ -46,26 +54,62 @@ const fmtDate = (d) => {
   }
 };
 
+// --- Delete Confirmation Component ---
+const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName }) => (
+  <Dialog open={open} onClose={onClose}>
+    <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Warning color="error" /> Confirm Deletion
+    </DialogTitle>
+    <DialogContent>
+      <DialogContentText>
+        Are you sure you want to delete this variant <strong>{itemName}</strong>
+        ? This action cannot be undone.
+      </DialogContentText>
+    </DialogContent>
+    <DialogActions sx={{ p: 2 }}>
+      <Button onClick={onClose} variant="outlined" color="inherit">
+        Cancel
+      </Button>
+      <Button onClick={onConfirm} variant="contained" color="error">
+        Delete
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
+
 const VariantMaster = () => {
+  // Data
   const [variants, setVariants] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Pagination
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
   const [rowCount, setRowCount] = useState(0);
 
+  // Search & Filter
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterProduct, setFilterProduct] = useState(null); // For Autocomplete
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
+  // Modals
   const [openModal, setOpenModal] = useState(false);
   const [editVariant, setEditVariant] = useState(null);
+
+  // Delete State
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [variantToDelete, setVariantToDelete] = useState(null);
+
+  // Menu
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(null);
 
+  // --- Fetch Variants ---
   const fetchVariants = useCallback(async () => {
     try {
       setLoading(true);
@@ -76,6 +120,7 @@ const VariantMaster = () => {
           limit: paginationModel.pageSize,
           search: debouncedSearchTerm,
           status: filterStatus,
+          product: filterProduct ? filterProduct._id || filterProduct.id : "",
         });
       setVariants(Array.isArray(vList) ? vList : []);
       setRowCount(pagination?.total || 0);
@@ -86,11 +131,67 @@ const VariantMaster = () => {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, debouncedSearchTerm, filterStatus]);
+  }, [paginationModel, debouncedSearchTerm, filterStatus, filterProduct]);
+
+  // --- Fetch Products for Filter ---
+  useEffect(() => {
+    const fetchProductsList = async () => {
+      try {
+        const res = await productService.getProducts({ limit: 1000 });
+        const list = Array.isArray(res?.data) ? res.data : res || [];
+        setProducts(list);
+      } catch (err) {
+        console.error("Product fetch error", err);
+      }
+    };
+    fetchProductsList();
+  }, []);
 
   useEffect(() => {
     fetchVariants();
   }, [fetchVariants]);
+
+  // --- Handlers ---
+  const handleAdd = () => {
+    setEditVariant(null);
+    setOpenModal(true);
+  };
+
+  const handleEdit = (variant) => {
+    setEditVariant(variant);
+    setOpenModal(true);
+    handleMenuClose();
+  };
+
+  const handleMenuClick = (e, row) => {
+    setAnchorEl(e.currentTarget);
+    setSelectedVariant(row);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedVariant(null);
+  };
+
+  const confirmDelete = (variant) => {
+    setVariantToDelete(variant);
+    setDeleteDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleDeleteVariant = async () => {
+    if (!variantToDelete) return;
+    try {
+      await variantMasterService.deleteVariant(variantToDelete._id);
+      toast.success("Variant deleted");
+      fetchVariants();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Delete failed");
+    } finally {
+      setDeleteDialogOpen(false);
+      setVariantToDelete(null);
+    }
+  };
 
   const handleFormSubmit = async (data) => {
     try {
@@ -109,17 +210,7 @@ const VariantMaster = () => {
     }
   };
 
-  const handleDeleteVariant = async (id) => {
-    if (!window.confirm("Delete variant?")) return;
-    try {
-      await variantMasterService.deleteVariant(id);
-      toast.success("Variant deleted");
-      fetchVariants();
-    } catch (err) {
-      toast.error(err.response?.data?.message || "Delete failed");
-    }
-  };
-
+  // --- Columns ---
   const columns = [
     {
       field: "productName",
@@ -136,7 +227,7 @@ const VariantMaster = () => {
     {
       field: "sizeName",
       headerName: "Size",
-      width: 140,
+      width: 130,
       sortable: false,
       renderCell: (p) => (
         <Typography variant="body2">
@@ -147,12 +238,14 @@ const VariantMaster = () => {
     {
       field: "colorName",
       headerName: "Color",
-      width: 140,
+      width: 130,
       sortable: false,
       renderCell: (p) => (
-        <Typography variant="body2">
-          {p?.row?.color?.colorName || p?.row?.colorName || "N/A"}
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="body2">
+            {p?.row?.color?.colorName || p?.row?.colorName || "N/A"}
+          </Typography>
+        </Box>
       ),
     },
     {
@@ -162,7 +255,7 @@ const VariantMaster = () => {
       renderCell: (p) => {
         const v = p?.row?.price ?? p?.row?.sellingPrice ?? p?.row?.mrp ?? 0;
         return (
-          <Typography variant="body2">
+          <Typography variant="body2" fontWeight={600}>
             ₹{Number(v).toLocaleString("en-IN")}
           </Typography>
         );
@@ -181,13 +274,14 @@ const VariantMaster = () => {
               ? "success"
               : "default"
           }
+          sx={{ textTransform: "capitalize" }}
         />
       ),
     },
     {
       field: "createdAt",
       headerName: "Created",
-      width: 150,
+      width: 140,
       renderCell: (p) => (
         <Typography variant="caption">
           {fmtDate(p?.row?.createdAt || p?.row?.updatedAt)}
@@ -201,13 +295,7 @@ const VariantMaster = () => {
       sortable: false,
       filterable: false,
       renderCell: (p) => (
-        <IconButton
-          onClick={(e) => {
-            setAnchorEl(e.currentTarget);
-            setSelectedVariant(p.row);
-          }}
-          size="small"
-        >
+        <IconButton onClick={(e) => handleMenuClick(e, p.row)} size="small">
           <MoreVert />
         </IconButton>
       ),
@@ -226,32 +314,60 @@ const VariantMaster = () => {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 2 }}>
+      {/* --- Header: Single Row --- */}
       <Card sx={{ mb: 3 }}>
-        <CardContent>
+        <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
           <Box
             sx={{
               display: "flex",
               gap: 2,
-              mb: 3,
-              alignItems: "center",
               flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
+            {/* Search */}
             <TextField
-              placeholder="Search..."
+              placeholder="Search product, sku, size..."
               size="small"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search />
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchTerm("")}>
+                      <Clear fontSize="small" />
+                    </IconButton>
                   </InputAdornment>
                 ),
               }}
-              sx={{ flexGrow: 1, minWidth: 250 }}
+              sx={{ flexGrow: 1, minWidth: 240 }}
             />
+
+            {/* Filter: Product (Autocomplete) */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 220 }}
+              options={products}
+              getOptionLabel={(option) => option.name || ""}
+              value={filterProduct}
+              onChange={(event, newValue) => setFilterProduct(newValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Filter By Product"
+                  placeholder="Select product"
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option._id === value._id}
+            />
+
+            {/* Filter: Status */}
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Status</InputLabel>
               <Select
@@ -264,20 +380,13 @@ const VariantMaster = () => {
                 <MenuItem value="Inactive">Inactive</MenuItem>
               </Select>
             </FormControl>
-            <Button
-              variant="outlined"
-              startIcon={<FilterList />}
-              onClick={fetchVariants}
-            >
-              Filter
-            </Button>
+
+            {/* Add Button */}
             <Button
               variant="contained"
               startIcon={<Add />}
-              onClick={() => {
-                setEditVariant(null);
-                setOpenModal(true);
-              }}
+              onClick={handleAdd}
+              sx={{ whiteSpace: "nowrap", height: 40 }}
             >
               Add Variant
             </Button>
@@ -285,6 +394,7 @@ const VariantMaster = () => {
         </CardContent>
       </Card>
 
+      {/* --- Data Table --- */}
       <Card>
         <DataGrid
           rows={Array.isArray(variants) ? variants : []}
@@ -297,31 +407,30 @@ const VariantMaster = () => {
           onPaginationModelChange={setPaginationModel}
           paginationMode="server"
           disableRowSelectionOnClick
+          autoHeight
+          sx={{
+            border: "none",
+            "& .MuiDataGrid-columnHeaders": {
+              backgroundColor: "rgba(76, 175, 80, 0.05)",
+            },
+          }}
         />
       </Card>
 
+      {/* --- Menu & Modals --- */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
-        onClose={() => setAnchorEl(null)}
+        onClose={handleMenuClose}
       >
-        <MenuItem
-          onClick={() => {
-            setEditVariant(selectedVariant);
-            setOpenModal(true);
-            setAnchorEl(null);
-          }}
-        >
-          <Edit style={{ marginRight: 8 }} /> Edit
+        <MenuItem onClick={() => handleEdit(selectedVariant)}>
+          <Edit sx={{ mr: 1, fontSize: 20 }} /> Edit
         </MenuItem>
         <MenuItem
-          onClick={() => {
-            handleDeleteVariant(selectedVariant?._id);
-            setAnchorEl(null);
-          }}
+          onClick={() => confirmDelete(selectedVariant)}
           sx={{ color: "error.main" }}
         >
-          <Delete style={{ marginRight: 8 }} /> Delete
+          <Delete sx={{ mr: 1, fontSize: 20 }} /> Delete
         </MenuItem>
       </Menu>
 
@@ -330,12 +439,23 @@ const VariantMaster = () => {
         onClose={() => setOpenModal(false)}
         title={editVariant ? "Edit Variant" : "Add Variant(s)"}
       >
-        <VariantManager
+        <VariantMasterForm
           initialData={editVariant}
           onSubmit={handleFormSubmit}
           onCancel={() => setOpenModal(false)}
         />
       </FormModal>
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteVariant}
+        itemName={
+          variantToDelete
+            ? `${variantToDelete.product?.name || "Product"}`
+            : "Item"
+        }
+      />
     </Box>
   );
 };

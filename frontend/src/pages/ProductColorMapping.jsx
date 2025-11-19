@@ -1,4 +1,4 @@
-// src/pages/ProductColorMapping.jsx
+// frontend/src/pages/ProductColorMapping.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
@@ -11,21 +11,27 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  Alert,
   FormControl,
   InputLabel,
   Select,
   Typography,
+  Autocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import {
   Add,
   Search,
-  FilterList,
   MoreVert,
   Edit,
   Delete,
   Circle,
+  Clear,
+  Warning,
 } from "@mui/icons-material";
 import FormModal from "../components/Modals/FormModal";
 import ProductColorMappingForm from "../components/Forms/ProductColorMappingForm";
@@ -43,97 +49,139 @@ const fmtDate = (d) =>
       })
     : "-";
 
+// --- Delete Confirmation Component ---
+const DeleteConfirmDialog = ({ open, onClose, onConfirm, itemName }) => (
+  <Dialog open={open} onClose={onClose}>
+    <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Warning color="error" /> Confirm Deletion
+    </DialogTitle>
+    <DialogContent>
+      <DialogContentText>
+        Are you sure you want to delete color mapping for{" "}
+        <strong>{itemName}</strong>? This action cannot be undone.
+      </DialogContentText>
+    </DialogContent>
+    <DialogActions sx={{ p: 2 }}>
+      <Button onClick={onClose} variant="outlined" color="inherit">
+        Cancel
+      </Button>
+      <Button onClick={onConfirm} variant="contained" color="error">
+        Delete
+      </Button>
+    </DialogActions>
+  </Dialog>
+);
+
 const ProductColorMapping = () => {
+  // Data State
   const [mappings, setMappings] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [rowCount, setRowCount] = useState(0);
 
+  // Pagination
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: 10,
   });
-  const [rowCount, setRowCount] = useState(0);
 
+  // Search & Filter
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterProduct, setFilterProduct] = useState("");
-
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterProduct, setFilterProduct] = useState(null);
 
+  // Modals & Dialogs
   const [openModal, setOpenModal] = useState(false);
   const [editMapping, setEditMapping] = useState(null);
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [mappingToDelete, setMappingToDelete] = useState(null);
+
+  // Menu
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedMapping, setSelectedMapping] = useState(null);
 
+  // Fetch Products for Filter
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await productService.getProducts({ limit: 1000 });
+        const list = Array.isArray(res?.data) ? res.data : res || [];
+        setProducts(list);
+      } catch {
+        console.error("Could not load products for filter.");
+      }
+    };
+    fetchProducts();
+  }, []);
+
+  // Fetch Mappings (with search & filter)
   const fetchMappings = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
       const { mappings, pagination } =
         await productColorMappingService.getColorMappings({
           page: paginationModel.page + 1,
           limit: paginationModel.pageSize,
           search: debouncedSearchTerm,
           status: filterStatus,
-          product: filterProduct,
+          // Use ID if filterProduct is selected
+          product: filterProduct ? filterProduct._id || filterProduct.id : "",
         });
       setMappings(Array.isArray(mappings) ? mappings : []);
       setRowCount(pagination?.total || 0);
     } catch (err) {
-      setError(err.message || "Failed to load mappings. Please try again.");
-      toast.error(err.message || "Failed to fetch color mappings");
+      toast.error("Failed to fetch color mappings");
     } finally {
       setLoading(false);
     }
   }, [paginationModel, debouncedSearchTerm, filterStatus, filterProduct]);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const res = await productService.getProducts({
-          limit: 1000,
-          status: "active",
-        });
-        let list = [];
-        if (Array.isArray(res?.data)) list = res.data;
-        else if (Array.isArray(res?.data?.products)) list = res.data.products;
-        else if (Array.isArray(res?.products)) list = res.products;
-        else if (Array.isArray(res)) list = res;
-        setProducts(list || []);
-      } catch {
-        toast.error("Could not load products for filter.");
-        setProducts([]);
-      }
-    };
-    fetchProducts();
-  }, []);
-
-  useEffect(() => {
     fetchMappings();
   }, [fetchMappings]);
 
+  // Handlers
   const handleAddMapping = () => {
     setEditMapping(null);
     setOpenModal(true);
   };
+
   const handleEditMapping = (row) => {
     setEditMapping(row);
     setOpenModal(true);
     handleMenuClose();
   };
+
   const handleMenuClick = (e, row) => {
     setAnchorEl(e.currentTarget);
     setSelectedMapping(row);
   };
+
   const handleMenuClose = () => {
     setAnchorEl(null);
     setSelectedMapping(null);
   };
-  const applyFilter = () => {
-    setPaginationModel((p) => ({ ...p, page: 0 }));
-    fetchMappings();
-    toast.success("Filters applied!");
+
+  const confirmDelete = (row) => {
+    setMappingToDelete(row);
+    setDeleteDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleDeleteMapping = async () => {
+    if (!mappingToDelete) return;
+    try {
+      await productColorMappingService.deleteColorMapping(mappingToDelete._id);
+      toast.success("Mapping deleted successfully!");
+      await fetchMappings();
+    } catch (e) {
+      toast.error(e.message || "Delete failed");
+    } finally {
+      setDeleteDialogOpen(false);
+      setMappingToDelete(null);
+    }
   };
 
   const handleFormSubmit = async (formData) => {
@@ -156,25 +204,12 @@ const ProductColorMapping = () => {
     }
   };
 
-  const handleDeleteMapping = async (id) => {
-    if (!id) return;
-    if (!window.confirm("Are you sure you want to delete this mapping?"))
-      return;
-    try {
-      await productColorMappingService.deleteColorMapping(id);
-      toast.success("Mapping deleted successfully!");
-      await fetchMappings();
-    } catch (e) {
-      toast.error(e.message || "Delete failed");
-    }
-    handleMenuClose();
-  };
-
   const columns = [
     {
       field: "productName",
       headerName: "Product Name",
-      width: 260,
+      flex: 1,
+      minWidth: 240,
       sortable: false,
       renderCell: (p) => (
         <Typography variant="body2" fontWeight={600}>
@@ -182,16 +217,25 @@ const ProductColorMapping = () => {
         </Typography>
       ),
     },
-    { field: "colorName", headerName: "Color Name", width: 160 },
+    { field: "colorName", headerName: "Color Name", width: 150 },
     {
       field: "value",
       headerName: "Color",
-      width: 170,
+      width: 150,
       sortable: false,
       renderCell: (p) => (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Circle sx={{ color: p?.row?.value, fontSize: 22 }} />
-          <Typography variant="body2">{p?.row?.value || "-"}</Typography>
+          <Circle
+            sx={{
+              color: p?.row?.value,
+              fontSize: 22,
+              border: "1px solid #eee",
+              borderRadius: "50%",
+            }}
+          />
+          <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
+            {p?.row?.value || "-"}
+          </Typography>
         </Box>
       ),
     },
@@ -208,6 +252,7 @@ const ProductColorMapping = () => {
               : "default"
           }
           size="small"
+          sx={{ textTransform: "capitalize" }}
         />
       ),
     },
@@ -226,7 +271,6 @@ const ProductColorMapping = () => {
       headerName: "Actions",
       width: 80,
       sortable: false,
-      filterable: false,
       renderCell: (p) => (
         <IconButton onClick={(e) => handleMenuClick(e, p.row)} size="small">
           <MoreVert />
@@ -235,21 +279,11 @@ const ProductColorMapping = () => {
     },
   ];
 
-  if (error) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">{error}</Alert>
-        <Button onClick={fetchMappings} sx={{ mt: 2 }}>
-          Retry
-        </Button>
-      </Box>
-    );
-  }
-
   return (
-    <Box>
+    <Box sx={{ p: 2 }}>
+      {/* --- Header: Single Row --- */}
       <Card sx={{ mb: 3 }}>
-        <CardContent>
+        <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
           <Box
             sx={{
               display: "flex",
@@ -258,37 +292,48 @@ const ProductColorMapping = () => {
               alignItems: "center",
             }}
           >
+            {/* Search (Searches Product Name too) */}
             <TextField
-              placeholder="Search by color name..."
+              placeholder="Search color name or product..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search />
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchTerm && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearchTerm("")}>
+                      <Clear fontSize="small" />
+                    </IconButton>
                   </InputAdornment>
                 ),
               }}
-              sx={{ flexGrow: 1, minWidth: 250 }}
+              sx={{ flexGrow: 1, minWidth: 240 }}
               size="small"
             />
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel>Filter By Product</InputLabel>
-              <Select
-                value={filterProduct}
-                onChange={(e) => setFilterProduct(e.target.value)}
-                label="Filter By Product"
-              >
-                <MenuItem value="">
-                  <em>All Products</em>
-                </MenuItem>
-                {(products || []).map((p) => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+
+            {/* Filter: Product (Autocomplete) */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 220 }}
+              options={products}
+              getOptionLabel={(option) => option.name || ""}
+              value={filterProduct}
+              onChange={(event, newValue) => setFilterProduct(newValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Filter By Product"
+                  placeholder="Select product"
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option._id === value._id}
+            />
+
+            {/* Filter: Status */}
             <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Status</InputLabel>
               <Select
@@ -301,17 +346,13 @@ const ProductColorMapping = () => {
                 <MenuItem value="Inactive">Inactive</MenuItem>
               </Select>
             </FormControl>
-            <Button
-              variant="outlined"
-              startIcon={<FilterList />}
-              onClick={applyFilter}
-            >
-              Filter
-            </Button>
+
+            {/* Add Button */}
             <Button
               variant="contained"
               startIcon={<Add />}
               onClick={handleAddMapping}
+              sx={{ whiteSpace: "nowrap", height: 40 }}
             >
               Add Mapping
             </Button>
@@ -319,9 +360,10 @@ const ProductColorMapping = () => {
         </CardContent>
       </Card>
 
+      {/* --- Table --- */}
       <Card>
         <DataGrid
-          rows={Array.isArray(mappings) ? mappings : []}
+          rows={mappings}
           columns={columns}
           getRowId={(row) => row._id}
           loading={loading}
@@ -331,6 +373,7 @@ const ProductColorMapping = () => {
           onPaginationModelChange={setPaginationModel}
           paginationMode="server"
           disableRowSelectionOnClick
+          autoHeight
           sx={{
             border: "none",
             "& .MuiDataGrid-columnHeaders": {
@@ -340,19 +383,20 @@ const ProductColorMapping = () => {
         />
       </Card>
 
+      {/* --- Menus & Modals --- */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
         onClose={handleMenuClose}
       >
         <MenuItem onClick={() => handleEditMapping(selectedMapping)}>
-          <Edit sx={{ mr: 1 }} /> Edit
+          <Edit sx={{ mr: 1, fontSize: 20 }} /> Edit
         </MenuItem>
         <MenuItem
-          onClick={() => handleDeleteMapping(selectedMapping?._id)}
+          onClick={() => confirmDelete(selectedMapping)}
           sx={{ color: "error.main" }}
         >
-          <Delete sx={{ mr: 1 }} /> Delete
+          <Delete sx={{ mr: 1, fontSize: 20 }} /> Delete
         </MenuItem>
       </Menu>
 
@@ -373,6 +417,17 @@ const ProductColorMapping = () => {
           }}
         />
       </FormModal>
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteMapping}
+        itemName={
+          mappingToDelete
+            ? `${mappingToDelete.colorName} (${mappingToDelete.product?.name})`
+            : ""
+        }
+      />
     </Box>
   );
 };

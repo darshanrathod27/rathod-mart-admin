@@ -3,7 +3,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import ProductSizeMapping from "../models/ProductSizeMapping.js";
 import Product from "../models/Product.js";
 
-/* LIST */
+/* LIST - Advanced Search (Includes Product Name) & Filter */
 export const getSizeMappings = asyncHandler(async (req, res) => {
   const {
     page = 1,
@@ -19,12 +19,28 @@ export const getSizeMappings = asyncHandler(async (req, res) => {
   const l = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
   const q = { isDeleted: false };
+
+  // Exact filters (from dropdowns)
   if (product) q.product = product;
   if (status) q.status = status;
+
+  // Advanced Search: Matches Size Name, Size Value OR Product Name
   if (search) {
+    const searchRegex = { $regex: search, $options: "i" };
+
+    // 1. Find products that match the search name
+    const matchedProducts = await Product.find({
+      name: searchRegex,
+      isDeleted: { $ne: true }, // optional: exclude deleted products
+    }).select("_id");
+
+    const matchedProductIds = matchedProducts.map((p) => p._id);
+
+    // 2. Build the OR query
     q.$or = [
-      { sizeName: { $regex: search, $options: "i" } },
-      { value: { $regex: search, $options: "i" } },
+      { sizeName: searchRegex },
+      { value: searchRegex },
+      { product: { $in: matchedProductIds } }, // Search by product name
     ];
   }
 
@@ -32,7 +48,7 @@ export const getSizeMappings = asyncHandler(async (req, res) => {
 
   const [items, total] = await Promise.all([
     ProductSizeMapping.find(q)
-      .populate("product", "name slug")
+      .populate("product", "name slug") // Populate to show name in table
       .sort(sort)
       .skip((p - 1) * l)
       .limit(l)
@@ -143,7 +159,7 @@ export const updateSizeMapping = asyncHandler(async (req, res) => {
   res.json({ success: true, data: out });
 });
 
-/* DELETE (soft, like your mapping) */
+/* DELETE (soft) */
 export const deleteSizeMapping = asyncHandler(async (req, res) => {
   const row = await ProductSizeMapping.findById(req.params.id);
   if (!row || row.isDeleted) {
