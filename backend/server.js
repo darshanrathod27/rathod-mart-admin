@@ -18,7 +18,8 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
-import promocodeRoutes from "./routes/promocodeRoutes.js"; // <--- Ensure this imports the correct file
+import promocodeRoutes from "./routes/promocodeRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -56,7 +57,9 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/cart", cartRoutes);
-app.use("/api/promocodes", promocodeRoutes); // <--- Ensure this variable is 'promocodeRoutes'
+app.use("/api/promocodes", promocodeRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/orders", orderRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {

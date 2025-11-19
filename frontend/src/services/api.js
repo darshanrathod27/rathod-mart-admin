@@ -9,19 +9,11 @@ const API_BASE_URL =
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: { "Content-Type": "application/json" },
-  withCredentials: true, // This is correct, keep it
+  withCredentials: true, // This handles HTTP-only cookies automatically
   timeout: 30000,
 });
 
-// request: remove the manual token interceptor
-api.interceptors.request.use((config) => {
-  // const token = sessionStorage.getItem("token"); // <-- REMOVE
-  // if (token) config.headers.Authorization = `Bearer ${token}`; // <-- REMOVE
-  config.params = { ...(config.params || {}), _t: Date.now() };
-  return config;
-});
-
-// response: (This is fine, keep it)
+// Response interceptor
 api.interceptors.response.use(
   (res) => res,
   (error) => {
