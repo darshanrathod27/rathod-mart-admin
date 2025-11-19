@@ -10,21 +10,21 @@ import {
   Select,
   FormHelperText,
   Typography,
-  DialogActions, // 1. Import DialogActions
+  DialogActions,
 } from "@mui/material";
 import { useForm, Controller } from "react-hook-form";
 import * as yup from "yup";
 import { yupResolver } from "@hookform/resolvers/yup";
 import toast from "react-hot-toast";
 import { inventoryService } from "../../services/inventoryService";
-// 2. Import standard styles
 import {
   formActionsStyles,
   cancelButtonStyles,
   submitButtonStyles,
   textFieldStyles,
 } from "../../theme/FormStyles";
-import { Save, Cancel } from "@mui/icons-material"; // Import icons
+import { Save, Cancel } from "@mui/icons-material";
+import FormAutocomplete from "./FormAutocomplete"; // <--- IMPORTED
 
 const schema = yup.object({
   variant: yup.string().nullable(),
@@ -43,7 +43,7 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
   const {
     control,
     handleSubmit,
-    formState: { errors, isSubmitting }, // 7. Get isSubmitting
+    formState: { errors, isSubmitting },
     reset,
   } = useForm({
     resolver: yupResolver(schema),
@@ -58,9 +58,17 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
       }
       try {
         setLoading(true);
-        // inventoryService.getProductVariants should return array or { data: [...] }
         const list = await inventoryService.getProductVariants(productId);
-        setVariants(Array.isArray(list) ? list : list?.data || []);
+        // Normalize for Autocomplete
+        const mappedList = (Array.isArray(list) ? list : list?.data || []).map(
+          (v) => ({
+            _id: v._id || v.id,
+            name: `${v?.size?.sizeName || ""}${v?.size ? " • " : ""}${
+              v?.color?.colorName || ""
+            }`,
+          })
+        );
+        setVariants(mappedList);
       } catch {
         setVariants([]);
       } finally {
@@ -101,38 +109,18 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
 
   return (
     <Box component="form" onSubmit={handleSubmit(submit)} noValidate>
-      {/* 3. Add p: 3 wrapper */}
       <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
-        <FormControl fullWidth>
-          <InputLabel>Variant (optional)</InputLabel>
-          <Controller
-            name="variant"
-            control={control}
-            render={({ field }) => (
-              <Select
-                {...field}
-                label="Variant (optional)"
-                disabled={loading || variants.length === 0}
-                sx={textFieldStyles} // 4. Apply style
-              >
-                <MenuItem value="">
-                  <em>Base product stock</em>
-                </MenuItem>
-                {(variants || []).map((v) => (
-                  <MenuItem key={v._id} value={v._id}>
-                    {`${v?.size?.sizeName || ""}${v?.size ? " • " : ""}${
-                      v?.color?.colorName || ""
-                    }`}
-                  </MenuItem>
-                ))}
-              </Select>
-            )}
-          />
-          <FormHelperText>
-            Leave blank to adjust base product stock; or choose a specific
-            variant.
-          </FormHelperText>
-        </FormControl>
+        {/* --- UPDATED: Advanced Variant Search --- */}
+        <FormAutocomplete
+          control={control}
+          name="variant"
+          label="Variant (optional)"
+          options={variants}
+          loading={loading}
+          disabled={loading || variants.length === 0}
+          helperText="Leave blank to adjust base product stock"
+          sx={textFieldStyles}
+        />
 
         <Controller
           name="quantity"
@@ -145,7 +133,7 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
               error={!!errors.quantity}
               helperText={errors.quantity?.message}
               fullWidth
-              sx={textFieldStyles} // 4. Apply style
+              sx={textFieldStyles}
             />
           )}
         />
@@ -167,13 +155,12 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
               fullWidth
               multiline
               maxRows={3}
-              sx={textFieldStyles} // 4. Apply style
+              sx={textFieldStyles}
             />
           )}
         />
       </Box>
 
-      {/* 5. Use standard DialogActions */}
       <DialogActions sx={formActionsStyles}>
         <Button
           variant="outlined"
@@ -196,5 +183,4 @@ const InventoryForm = ({ productId, mode = "add", onClose, onSuccess }) => {
     </Box>
   );
 };
-
 export default InventoryForm;

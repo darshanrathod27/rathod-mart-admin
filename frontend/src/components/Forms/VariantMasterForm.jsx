@@ -48,6 +48,9 @@ import {
   textFieldStyles,
 } from "../../theme/FormStyles";
 
+// Import the Advanced Search Component
+import FormAutocomplete from "./FormAutocomplete";
+
 /* ----------------- validation ----------------- */
 const variantSchema = yup.object({
   product: yup.string().required("Product selection is required"),
@@ -115,8 +118,9 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
+        // Increased limit for search
         const res = await productService.getProducts({
-          limit: 1000,
+          limit: 2000,
           status: "active",
         });
         let list = extractProducts(res);
@@ -221,86 +225,40 @@ const VariantMasterForm = ({ initialData, onSubmit, onCancel }) => {
         component="form"
         onSubmit={handleSubmit(handleFormSubmit)}
         noValidate
+        // REMOVED: maxHeight and overflowY here to fix double scrollbar.
+        // The parent modal handles scrolling.
       >
-        {/* --- MODIFICATION (Scrollbar Fix) --- */}
-        {/* Removed maxHeight and overflowY from this Box */}
-        {/* The parent FormModal will handle scrolling */}
-        <Box
-          sx={{
-            p: 3,
-          }}
-        >
-          {/* --- END MODIFICATION --- */}
+        {/* Preserved Padding 3 */}
+        <Box sx={{ p: 3 }}>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {/* Product Selection */}
+            {/* --- CHANGED: Product Selection to Advanced Dropdown --- */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4 }}
             >
-              <FormControl fullWidth error={!!errors.product}>
-                <InputLabel>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <Inventory2 sx={{ fontSize: 20 }} />
-                    Select Product *
-                  </Box>
-                </InputLabel>
-                <Controller
-                  name="product"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      {...field}
-                      label="Select Product *"
-                      disabled={loading}
-                      sx={textFieldStyles}
-                      startAdornment={
-                        loading && (
-                          <InputAdornment position="start">
-                            <CircularProgress size={20} />
-                          </InputAdornment>
-                        )
-                      }
-                    >
-                      <MenuItem value="">
-                        <em>-- Choose a Product --</em>
-                      </MenuItem>
-                      {products.map((prod) => (
-                        <MenuItem key={prod._id} value={prod._id}>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                              width: "100%",
-                            }}
-                          >
-                            <Inventory2
-                              sx={{ fontSize: 18, color: "primary.main" }}
-                            />
-                            <Typography>{prod.name}</Typography>
-                            <Chip
-                              label={prod.status}
-                              size="small"
-                              sx={{
-                                ml: "auto",
-                                bgcolor: "success.lighter",
-                                color: "success.main",
-                                fontWeight: 600,
-                                fontSize: "0.7rem",
-                              }}
-                            />
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  )}
-                />
-                {errors.product && (
-                  <FormHelperText>{errors.product.message}</FormHelperText>
-                )}
-              </FormControl>
+              <FormAutocomplete
+                control={control}
+                name="product"
+                label="Select Product *"
+                options={products}
+                loading={loading}
+                error={!!errors.product}
+                helperText={errors.product?.message}
+                sx={textFieldStyles}
+                // Added icon to match your previous look
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Inventory2
+                        sx={{ fontSize: 20, color: "primary.main" }}
+                      />
+                    </InputAdornment>
+                  ),
+                }}
+              />
             </motion.div>
+            {/* --- END CHANGE --- */}
 
             {/* Warning when sizes/colors missing */}
             {selectedProduct && (sizes.length === 0 || colors.length === 0) && (

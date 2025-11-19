@@ -8,8 +8,8 @@ import {
 } from "../utils/categoryIcons.js";
 
 /**
- * Helper: Update product count for a category
- * Counts active AND draft products
+ * Update the productsCount for a given categoryId.
+ * Counts products with status "active" or "draft".
  */
 export const updateCategoryProductCount = async (categoryId) => {
   if (!categoryId) return;
@@ -19,7 +19,6 @@ export const updateCategoryProductCount = async (categoryId) => {
       status: { $in: ["active", "draft"] },
     });
     await Category.findByIdAndUpdate(categoryId, { productsCount: count });
-    console.log(`Updated productsCount for category ${categoryId} => ${count}`);
   } catch (err) {
     console.error(`Failed to update count for category ${categoryId}:`, err);
   }
@@ -34,8 +33,6 @@ export const getCategories = asyncHandler(async (req, res) => {
     status = "",
     sortBy = "createdAt",
     sortOrder = "desc",
-    dateFrom,
-    dateTo,
   } = req.query;
 
   const p = Math.max(parseInt(page, 10) || 1, 1);
@@ -43,9 +40,9 @@ export const getCategories = asyncHandler(async (req, res) => {
 
   const filter = { isDeleted: false };
 
+  // Use $regex only to avoid "No query solutions" error with $text
   if (search) {
     filter.$or = [
-      { $text: { $search: search } },
       { name: { $regex: search, $options: "i" } },
       { description: { $regex: search, $options: "i" } },
     ];
@@ -53,25 +50,12 @@ export const getCategories = asyncHandler(async (req, res) => {
 
   if (status) filter.status = status;
 
-  if (dateFrom || dateTo) {
-    filter.createdAt = {};
-    if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
-    if (dateTo) filter.createdAt.$lte = new Date(dateTo);
-  }
-
-  const allowSort = new Set([
-    "name",
-    "status",
-    "createdAt",
-    "updatedAt",
-    "productsCount",
-  ]);
-  const key = allowSort.has(sortBy) ? sortBy : "createdAt";
+  const sortKey = sortBy || "createdAt";
   const dir = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
 
   const [items, total] = await Promise.all([
     Category.find(filter)
-      .sort({ [key]: dir })
+      .sort({ [sortKey]: dir })
       .skip((p - 1) * l)
       .limit(l)
       .lean(),
@@ -85,7 +69,7 @@ export const getCategories = asyncHandler(async (req, res) => {
   });
 });
 
-// ------ Get one ------
+// Get single category
 export const getCategory = asyncHandler(async (req, res) => {
   const item = await Category.findOne({ _id: req.params.id, isDeleted: false });
   if (!item) {
@@ -96,24 +80,21 @@ export const getCategory = asyncHandler(async (req, res) => {
   res.json({ success: true, data: item });
 });
 
-// ------ Create ------
+// Create new category
 export const createCategory = asyncHandler(async (req, res) => {
   const { name, description = "", status = "active" } = req.body;
-
-  if (!name || typeof name !== "string" || !name.trim()) {
+  if (!name) {
     const e = new Error("Category name is required");
     e.statusCode = 400;
     throw e;
   }
 
-  // unique (case-insensitive) among non-deleted
   const exists = await Category.findOne({
     name: { $regex: new RegExp(`^${name}$`, "i") },
     isDeleted: false,
   });
-
   if (exists) {
-    const e = new Error("Category with this name already exists");
+    const e = new Error("Category already exists");
     e.statusCode = 409;
     throw e;
   }
@@ -136,7 +117,7 @@ export const createCategory = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: cat });
 });
 
-// ------ Update ------
+// Update category
 export const updateCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const update = { ...req.body };
@@ -148,7 +129,6 @@ export const updateCategory = asyncHandler(async (req, res) => {
     throw e;
   }
 
-  // name change → unique check + new icon/color + new slug
   if (update.name && update.name !== current.name) {
     const exists = await Category.findOne({
       name: { $regex: new RegExp(`^${update.name}$`, "i") },
@@ -163,7 +143,6 @@ export const updateCategory = asyncHandler(async (req, res) => {
 
     update.icon = getAutoIcon(update.name);
     update.color = getAutoColor(update.name);
-
     update.slug = update.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -178,82 +157,38 @@ export const updateCategory = asyncHandler(async (req, res) => {
   res.json({ success: true, data: cat });
 });
 
-// ------ Soft Delete ------
+// Soft-delete category
 export const deleteCategory = asyncHandler(async (req, res) => {
-  const item = await Category.findOne({ _id: req.params.id, isDeleted: false });
-  if (!item) {
-    const e = new Error("Category not found");
-    e.statusCode = 404;
-    throw e;
-  }
-
   await Category.findByIdAndUpdate(req.params.id, {
     isDeleted: true,
     deletedAt: new Date(),
   });
-
-  // update product count for this category (now should be zero or reflect remaining)
-  try {
-    await updateCategoryProductCount(req.params.id);
-  } catch (err) {
-    console.warn("Failed to update category count after delete:", err);
-  }
-
+  // Recount products for that category (keeps counts accurate)
+  await updateCategoryProductCount(req.params.id);
   res.json({ success: true, message: "Category deleted" });
 });
 
-/**
- * @desc    Recalculate product counts for all categories
- * @route   GET /api/categories/admin/recount-all
- * @access  Admin
- */
-export const recountAllCategories = asyncHandler(async (req, res) => {
-  try {
-    const categories = await Category.find({ isDeleted: false }).select("_id");
-    let processed = 0;
-    for (const cat of categories) {
-      await updateCategoryProductCount(cat._id);
-      processed++;
-    }
+// Admin utilities
 
-    res.json({
-      success: true,
-      message: `Recalculated counts for ${processed} categories.`,
-    });
-  } catch (err) {
-    console.error("Recount error:", err);
-    res.status(500).json({ success: false, message: err.message });
+// Recalculate product counts for all categories
+export const recountAllCategories = asyncHandler(async (req, res) => {
+  const categories = await Category.find({ isDeleted: false }).select("_id");
+  for (const cat of categories) {
+    // Sequential is fine here; if you want concurrency use Promise.allSettled in batches
+    await updateCategoryProductCount(cat._id);
   }
+  res.json({ success: true, message: "Recalculated counts." });
 });
 
-/**
- * @desc    Fix icons and colors for all existing categories
- * @route   GET /api/categories/admin/fix-icons
- * @access  Admin
- */
+// Fix icons & colors using your generator util
 export const fixCategoryIcons = asyncHandler(async (req, res) => {
-  try {
-    const categories = await Category.find({ isDeleted: false });
-    let updatedCount = 0;
-
-    for (const cat of categories) {
-      const newIcon = getAutoIcon(cat.name);
-      const newColor = getAutoColor(cat.name);
-
-      if (cat.icon !== newIcon || cat.color !== newColor) {
-        cat.icon = newIcon;
-        cat.color = newColor;
-        await cat.save();
-        updatedCount++;
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `Updated icons/colors for ${updatedCount} categories.`,
-    });
-  } catch (err) {
-    console.error("Fix Icons error:", err);
-    res.status(500).json({ success: false, message: "Failed to fix icons." });
+  const categories = await Category.find({ isDeleted: false });
+  let count = 0;
+  for (const cat of categories) {
+    cat.icon = getAutoIcon(cat.name);
+    cat.color = getAutoColor(cat.name);
+    await cat.save();
+    count++;
   }
+  res.json({ success: true, message: `Updated ${count} categories.` });
 });

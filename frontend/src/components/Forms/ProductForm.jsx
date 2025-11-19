@@ -1,12 +1,9 @@
 // src/components/Forms/ProductForm.jsx
 import React, { useEffect, useState, useCallback } from "react";
-import PropTypes from "prop-types";
 import {
   Box,
   TextField,
   Button,
-  MenuItem,
-  Chip,
   Stack,
   Typography,
   FormControlLabel,
@@ -15,15 +12,13 @@ import {
   Divider,
   IconButton,
   DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
   Grid,
   Paper,
   Card,
   CardMedia,
   CardActions,
   Tooltip,
+  Chip,
 } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -38,6 +33,7 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import { useDropzone } from "react-dropzone";
 import { inventoryService } from "../../services/inventoryService";
+import FormAutocomplete from "./FormAutocomplete"; // Import the new component
 import {
   StyledFormDialog,
   formHeaderStyles,
@@ -49,11 +45,12 @@ import {
   sectionHeaderStyles,
 } from "../../theme/FormStyles";
 
-/* --------------- validation schema --------------- */
+/* Validation Schema */
 const schema = yup.object({
   name: yup.string().trim().required("Product name is required"),
   description: yup.string().trim().required("Description is required"),
   category: yup.string().required("Category is required"),
+  brand: yup.string().nullable(),
   basePrice: yup
     .number()
     .typeError("Base price must be a number")
@@ -90,56 +87,37 @@ export default function ProductForm({
   } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
-      name: initialData?.name || "",
-      description: initialData?.description || "",
-      shortDescription: initialData?.shortDescription || "",
-      category:
-        (initialData?.category &&
-          (initialData.category._id || initialData.category)) ||
-        "",
-      brand: initialData?.brand || "",
-      basePrice: initialData?.basePrice ?? 0,
-      discountPercentage:
-        initialData &&
-        initialData.basePrice &&
-        initialData.discountPrice != null
-          ? Math.round(
-              ((initialData.basePrice - initialData.discountPrice) /
-                initialData.basePrice) *
-                100
-            )
-          : "",
-      discountPrice: initialData?.discountPrice ?? initialData?.basePrice ?? 0,
-      status: initialData?.status || "draft",
-      featured: initialData?.featured || false,
-      trending: initialData?.trending || false,
-      // --- CHANGE: Added isBestOffer ---
-      isBestOffer: initialData?.isBestOffer || false,
-      // --- END CHANGE ---
-      tags: initialData?.tags || [],
-      features: initialData?.features || [],
+      name: "",
+      description: "",
+      shortDescription: "",
+      category: "",
+      brand: "",
+      basePrice: 0,
+      discountPercentage: "",
+      discountPrice: 0,
+      status: "draft",
+      featured: false,
+      trending: false,
+      isBestOffer: false,
+      tags: [],
+      features: [],
     },
   });
 
-  const [images, setImages] = useState(() =>
-    (initialData?.images || []).map((img) => ({
-      ...img,
-      id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
-      previewUrl: img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
-    }))
-  );
+  // Image State
+  const [images, setImages] = useState([]);
   const [deleteFilenames, setDeleteFilenames] = useState([]);
-  const [variants, setVariants] = useState([]);
-  const [selectedVariant, setSelectedVariant] = useState("");
 
+  // Tags/Features State
   const [tagInput, setTagInput] = useState("");
   const [featureInput, setFeatureInput] = useState("");
   const tags = watch("tags") || [];
   const features = watch("features") || [];
+
+  // Price calculation
   const basePrice = watch("basePrice");
   const discountPerc = watch("discountPercentage");
 
-  /* recalculated discountPrice when basePrice or discountPercentage changes */
   useEffect(() => {
     const b = parseFloat(basePrice);
     const p = parseFloat(discountPerc);
@@ -154,83 +132,54 @@ export default function ProductForm({
     }
   }, [basePrice, discountPerc, setValue]);
 
+  // Initialize Data
   useEffect(() => {
     if (initialData) {
       reset({
-        name: initialData?.name || "",
-        description: initialData?.description || "",
-        shortDescription: initialData?.shortDescription || "",
-        category:
-          (initialData?.category &&
-            (initialData.category._id || initialData.category)) ||
-          "",
-        brand: initialData?.brand || "",
-        basePrice: initialData?.basePrice ?? 0,
+        name: initialData.name || "",
+        description: initialData.description || "",
+        shortDescription: initialData.shortDescription || "",
+        category: initialData.category?._id || initialData.category || "",
+        brand: initialData.brand || "",
+        basePrice: initialData.basePrice ?? 0,
         discountPercentage:
-          initialData &&
-          initialData.basePrice &&
-          initialData.discountPrice != null
+          initialData.basePrice && initialData.discountPrice != null
             ? Math.round(
                 ((initialData.basePrice - initialData.discountPrice) /
                   initialData.basePrice) *
                   100
               )
             : "",
-        discountPrice:
-          initialData?.discountPrice ?? initialData?.basePrice ?? 0,
-        status: initialData?.status || "draft",
-        featured: initialData?.featured || false,
-        trending: initialData?.trending || false,
-        // --- CHANGE: Added isBestOffer ---
-        isBestOffer: initialData?.isBestOffer || false,
-        // --- END CHANGE ---
-        tags: initialData?.tags || [],
-        features: initialData?.features || [],
+        discountPrice: initialData.discountPrice ?? 0,
+        status: initialData.status || "draft",
+        featured: initialData.featured || false,
+        trending: initialData.trending || false,
+        isBestOffer: initialData.isBestOffer || false,
+        tags: initialData.tags || [],
+        features: initialData.features || [],
       });
+
       setImages(
-        (initialData?.images || []).map((img) => ({
+        (initialData.images || []).map((img) => ({
           ...img,
           id: img._id || img.filename || `${Date.now()}-${Math.random()}`,
-          previewUrl:
-            img.fullUrl || img.fullImageUrl || img.url || img.imageUrl,
+          previewUrl: img.fullUrl || img.fullImageUrl || img.url,
         }))
       );
-      setDeleteFilenames([]);
-
-      const fetchVariants = async () => {
-        try {
-          const vRes = await inventoryService.getProductVariants(
-            initialData._id
-          );
-          setVariants(vRes.data || vRes || []);
-        } catch (e) {
-          console.error("Failed to fetch variants for form", e);
-          setVariants([]);
-        }
-      };
-      if (isEdit) {
-        fetchVariants();
-      }
     }
-  }, [initialData, reset, isEdit]);
+  }, [initialData, reset]);
 
-  const onDrop = useCallback(
-    (acceptedFiles) => {
-      if (!acceptedFiles || acceptedFiles.length === 0) return;
-
-      const newFileObjects = acceptedFiles.map((file) => ({
-        id: `${file.name}-${Date.now()}-${Math.random()}`,
-        _localFile: file,
-        previewUrl: URL.createObjectURL(file),
-        alt: file.name,
-        isPrimary: false,
-        filename: file.name,
-      }));
-
-      setImages((prevImages) => [...prevImages, ...newFileObjects]);
-    },
-    [setImages]
-  );
+  // Dropzone
+  const onDrop = useCallback((acceptedFiles) => {
+    if (!acceptedFiles?.length) return;
+    const newFiles = acceptedFiles.map((file) => ({
+      id: `${file.name}-${Date.now()}`,
+      _localFile: file,
+      previewUrl: URL.createObjectURL(file),
+      filename: file.name,
+    }));
+    setImages((prev) => [...prev, ...newFiles]);
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -238,83 +187,49 @@ export default function ProductForm({
     multiple: true,
   });
 
-  const handleRemoveImage = (id, filename) => {
-    const imageToRemove = images.find((img) => img.id === id);
-    if (imageToRemove && imageToRemove.filename && !imageToRemove._localFile) {
-      setDeleteFilenames((prev) => [...prev, imageToRemove.filename]);
+  const handleRemoveImage = (id) => {
+    const imgToRemove = images.find((i) => i.id === id);
+    if (imgToRemove?.filename && !imgToRemove._localFile) {
+      setDeleteFilenames((prev) => [...prev, imgToRemove.filename]);
     }
-    setImages((prevImages) => prevImages.filter((img) => img.id !== id));
+    setImages((prev) => prev.filter((i) => i.id !== id));
   };
 
-  const addTag = (value) => {
-    const v = (value || "").trim();
-    if (!v) return;
-    if (!tags.includes(v))
-      setValue("tags", [...tags, v], { shouldValidate: true });
-    setTagInput("");
-  };
-  const removeTag = (index) => {
-    const arr = [...tags];
-    arr.splice(index, 1);
-    setValue("tags", arr, { shouldValidate: true });
-  };
-  const addFeature = (value) => {
-    const v = (value || "").trim();
-    if (!v) return;
-    if (!features.includes(v))
-      setValue("features", [...features, v], { shouldValidate: true });
-    setFeatureInput("");
-  };
-  const removeFeature = (index) => {
-    const arr = [...features];
-    arr.splice(index, 1);
-    setValue("features", arr, { shouldValidate: true });
+  // Tags & Features Logic
+  const handleAddArrayItem = (e, type) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const val = type === "tags" ? tagInput : featureInput;
+      const current = type === "tags" ? tags : features;
+      if (val.trim() && !current.includes(val.trim())) {
+        setValue(type, [...current, val.trim()], { shouldValidate: true });
+        type === "tags" ? setTagInput("") : setFeatureInput("");
+      }
+    }
   };
 
-  const onKeyDown = (e) => {
-    const tag = e.target?.tagName?.toLowerCase();
-    if (e.key === "Enter" && tag !== "textarea") e.preventDefault();
+  const handleRemoveArrayItem = (index, type) => {
+    const current = type === "tags" ? tags : features;
+    const newArr = [...current];
+    newArr.splice(index, 1);
+    setValue(type, newArr, { shouldValidate: true });
   };
 
   const submit = async (vals) => {
     const fd = new FormData();
-    fd.append("name", vals.name);
-    fd.append("description", vals.description);
-    if (vals.shortDescription)
-      fd.append("shortDescription", vals.shortDescription);
-    fd.append("category", vals.category);
-    if (vals.brand) fd.append("brand", vals.brand);
-    fd.append("basePrice", String(vals.basePrice));
-    if (vals.discountPrice !== undefined && vals.discountPrice !== null)
-      fd.append("discountPrice", String(vals.discountPrice));
-    if (
-      vals.discountPercentage !== undefined &&
-      vals.discountPercentage !== null
-    )
-      fd.append("discountPercentage", String(vals.discountPercentage));
-    fd.append("status", vals.status || "draft");
-    fd.append("featured", vals.featured ? "true" : "false");
-    fd.append("trending", vals.trending ? "true" : "false");
-    // --- CHANGE: Send isBestOffer to backend ---
-    fd.append("isBestOffer", vals.isBestOffer ? "true" : "false");
-    // --- END CHANGE ---
-    fd.append("tags", JSON.stringify(vals.tags || []));
-    fd.append("features", JSON.stringify(vals.features || []));
+    // Append text fields
+    Object.keys(vals).forEach((key) => {
+      if (key === "tags" || key === "features") {
+        fd.append(key, JSON.stringify(vals[key]));
+      } else if (key !== "images") {
+        fd.append(key, vals[key]);
+      }
+    });
 
-    if (selectedVariant) {
-      fd.append("variantId", selectedVariant);
-    }
-
-    const existingFilenames = [];
-    (images || []).forEach((img) => {
+    // Append Images
+    images.forEach((img) => {
       if (img._localFile) {
-        fd.append(
-          "images",
-          img._localFile,
-          img._localFile.name || `img-${Date.now()}`
-        );
-      } else if (img.filename) {
-        existingFilenames.push(img.filename);
+        fd.append("images", img._localFile);
       }
     });
 
@@ -322,24 +237,18 @@ export default function ProductForm({
       fd.append("deleteFilenames", JSON.stringify(deleteFilenames));
     }
 
-    if (isEdit) fd.append("_id", initialData._id);
     await onSubmit(fd, { isEdit, id: initialData?._id });
   };
 
   const formInner = (
     <Box sx={{ p: 3 }}>
-      <Box
-        component="form"
-        onSubmit={handleSubmit(submit)}
-        onKeyDown={onKeyDown}
-      >
+      <Box component="form" onSubmit={handleSubmit(submit)}>
+        {/* Basic Info */}
         <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
           <Typography sx={sectionHeaderStyles}>
-            <InfoOutlinedIcon sx={{ fontSize: 20 }} />
-            Basic Information
+            <InfoOutlinedIcon sx={{ fontSize: 20 }} /> Basic Information
           </Typography>
-
-          <Stack spacing={2} sx={{ mt: 1 }}>
+          <Stack spacing={2}>
             <Controller
               name="name"
               control={control}
@@ -348,8 +257,6 @@ export default function ProductForm({
                   {...field}
                   label="Product Name"
                   fullWidth
-                  required
-                  size="small"
                   error={!!errors.name}
                   helperText={errors.name?.message}
                   sx={textFieldStyles}
@@ -357,29 +264,14 @@ export default function ProductForm({
               )}
             />
 
-            <Controller
-              name="category"
+            {/* ADVANCED CATEGORY DROPDOWN */}
+            <FormAutocomplete
               control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  select
-                  label="Category"
-                  fullWidth
-                  required
-                  size="small"
-                  error={!!errors.category}
-                  helperText={errors.category?.message}
-                  sx={textFieldStyles}
-                >
-                  <MenuItem value="">Select Category</MenuItem>
-                  {categories.map((c) => (
-                    <MenuItem key={c._id || c.id} value={c._id || c.id}>
-                      {c.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
+              name="category"
+              label="Category"
+              options={categories}
+              error={!!errors.category}
+              helperText={errors.category?.message}
             />
 
             <Controller
@@ -390,7 +282,6 @@ export default function ProductForm({
                   {...field}
                   label="Brand"
                   fullWidth
-                  size="small"
                   sx={textFieldStyles}
                 />
               )}
@@ -406,8 +297,6 @@ export default function ProductForm({
                     label="Base Price"
                     type="number"
                     fullWidth
-                    required
-                    size="small"
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">₹</InputAdornment>
@@ -419,7 +308,6 @@ export default function ProductForm({
                   />
                 )}
               />
-
               <Controller
                 name="discountPercentage"
                 control={control}
@@ -429,178 +317,93 @@ export default function ProductForm({
                     label="Discount %"
                     type="number"
                     fullWidth
-                    size="small"
                     InputProps={{
                       endAdornment: (
                         <InputAdornment position="end">%</InputAdornment>
                       ),
                     }}
                     error={!!errors.discountPercentage}
-                    helperText={errors.discountPercentage?.message}
                     sx={textFieldStyles}
                   />
                 )}
               />
-
-              <Controller
-                name="discountPrice"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Final Price"
-                    type="number"
-                    fullWidth
-                    size="small"
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">₹</InputAdornment>
-                      ),
-                      readOnly: true,
-                    }}
-                    sx={textFieldStyles}
-                  />
-                )}
+              <TextField
+                label="Final Price"
+                value={watch("discountPrice")}
+                fullWidth
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">₹</InputAdornment>
+                  ),
+                  readOnly: true,
+                }}
+                sx={textFieldStyles}
               />
             </Stack>
           </Stack>
         </Box>
 
-        <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
+        <Divider sx={{ my: 2 }} />
 
+        {/* Images */}
         <Box sx={{ ...fieldContainerStyles, mb: 2 }}>
           <Typography sx={sectionHeaderStyles}>
-            <ImageOutlinedIcon sx={{ fontSize: 20 }} />
-            Product Images & Preview
+            <ImageOutlinedIcon sx={{ fontSize: 20 }} /> Images
           </Typography>
-
-          {isEdit && variants && variants.length > 0 && (
-            <FormControl fullWidth sx={{ mb: 2 }} size="small">
-              <InputLabel>Assign new images to (Optional)</InputLabel>
-              <Select
-                value={selectedVariant}
-                label="Assign new images to (Optional)"
-                onChange={(e) => setSelectedVariant(e.target.value)}
-                sx={textFieldStyles}
-              >
-                <MenuItem value="">
-                  <em>General Images (No Variant)</em>
-                </MenuItem>
-                {variants.map((v) => (
-                  <MenuItem key={v._id} value={v._id}>
-                    {v.color?.colorName ? `${v.color.colorName} ` : ""}
-                    {v.size?.sizeName ? ` / ${v.size.sizeName}` : ""}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-
           <Paper
             {...getRootProps()}
             sx={{
               border: "2px dashed",
               borderColor: isDragActive ? "primary.main" : "#66BB6A",
-              borderRadius: 2,
-              backgroundColor: isDragActive ? "#E8F5E9" : "#F1F8F1",
-              p: 2,
-              minHeight: "120px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
+              bgcolor: isDragActive ? "#E8F5E9" : "#F1F8F1",
+              p: 3,
+              textAlign: "center",
               cursor: "pointer",
-              transition: "all 0.3s ease",
+              borderRadius: 2,
             }}
           >
             <input {...getInputProps()} />
-            {isDragActive ? (
-              <Typography variant="h6" color="primary">
-                Drop files here...
-              </Typography>
-            ) : (
-              <>
-                <CloudUploadIcon sx={{ fontSize: 40, color: "#66BB6A" }} />
-                <Typography color="textSecondary" sx={{ mt: 1 }}>
-                  Drag & drop images here, or click to browse
-                </Typography>
-                <Typography variant="caption" color="textSecondary">
-                  (You can add multiple images)
-                </Typography>
-              </>
-            )}
+            <CloudUploadIcon sx={{ fontSize: 40, color: "#66BB6A" }} />
+            <Typography variant="body2" color="textSecondary">
+              Drag & drop or click to upload
+            </Typography>
           </Paper>
 
-          {images.length > 0 && (
-            <Box sx={{ mt: 2 }}>
-              <Grid container spacing={2}>
-                {images.map((img) => (
-                  <Grid item xs={6} sm={4} md={3} key={img.id}>
-                    <Card sx={{ position: "relative" }}>
-                      <CardMedia
-                        component="img"
-                        height="140"
-                        image={img.previewUrl}
-                        alt={img.alt || "preview"}
-                        sx={{ objectFit: "cover" }}
-                      />
-                      <CardActions
-                        sx={{
-                          position: "absolute",
-                          top: 0,
-                          right: 0,
-                          p: 0.5,
-                        }}
-                      >
-                        <Tooltip title="Remove Image">
-                          <IconButton
-                            size="small"
-                            onClick={() =>
-                              handleRemoveImage(img.id, img.filename)
-                            }
-                            sx={{
-                              bgcolor: "rgba(255, 0, 0, 0.6)",
-                              color: "white",
-                              "&:hover": { bgcolor: "rgba(255, 0, 0, 0.9)" },
-                            }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </CardActions>
-                    </Card>
-                  </Grid>
-                ))}
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            {images.map((img) => (
+              <Grid item xs={4} sm={3} key={img.id}>
+                <Card sx={{ position: "relative" }}>
+                  <CardMedia
+                    component="img"
+                    height="100"
+                    image={img.previewUrl}
+                    sx={{ objectFit: "contain" }}
+                  />
+                  <CardActions
+                    sx={{ position: "absolute", top: 0, right: 0, p: 0 }}
+                  >
+                    <IconButton
+                      size="small"
+                      onClick={() => handleRemoveImage(img.id)}
+                      sx={{ bgcolor: "rgba(255,255,255,0.8)" }}
+                    >
+                      <DeleteIcon color="error" fontSize="small" />
+                    </IconButton>
+                  </CardActions>
+                </Card>
               </Grid>
-            </Box>
-          )}
+            ))}
+          </Grid>
         </Box>
 
-        <Divider sx={{ my: 2, borderColor: "#E8F5E9" }} />
+        <Divider sx={{ my: 2 }} />
 
+        {/* Specifications */}
         <Box sx={{ ...fieldContainerStyles }}>
           <Typography sx={sectionHeaderStyles}>
-            <SettingsOutlinedIcon sx={{ fontSize: 20 }} />
-            Specifications & Details
+            <SettingsOutlinedIcon sx={{ fontSize: 20 }} /> Specifications
           </Typography>
-
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <Controller
-              name="shortDescription"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label="Short Description"
-                  fullWidth
-                  size="small"
-                  multiline
-                  rows={2}
-                  placeholder="Brief product description"
-                  sx={textFieldStyles}
-                />
-              )}
-            />
+          <Stack spacing={2}>
             <Controller
               name="description"
               control={control}
@@ -609,168 +412,92 @@ export default function ProductForm({
                   {...field}
                   label="Full Description"
                   fullWidth
-                  required
-                  size="small"
                   multiline
                   rows={3}
                   error={!!errors.description}
                   helperText={errors.description?.message}
-                  placeholder="Detailed product description"
                   sx={textFieldStyles}
                 />
               )}
             />
 
+            {/* Tags */}
             <Box>
-              <Typography
-                variant="body2"
-                sx={{ mb: 1, fontWeight: 600, color: "#2E7D32" }}
-              >
-                Tags
-              </Typography>
-              {tags.length > 0 && (
-                <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
-                  {tags.map((t, idx) => (
-                    <Chip
-                      key={t + idx}
-                      label={t}
-                      size="small"
-                      onDelete={() => removeTag(idx)}
-                      sx={{ m: 0.5 }}
-                    />
-                  ))}
-                </Stack>
-              )}
-              <Stack direction="row" spacing={1}>
-                <TextField
-                  size="small"
-                  placeholder="Add tag and press Enter"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTag(tagInput);
-                    }
-                  }}
-                  fullWidth
-                  sx={textFieldStyles}
-                />
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => addTag(tagInput)}
-                >
-                  Add
-                </Button>
+              <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
+                {tags.map((t, i) => (
+                  <Chip
+                    key={i}
+                    label={t}
+                    onDelete={() => handleRemoveArrayItem(i, "tags")}
+                    size="small"
+                  />
+                ))}
               </Stack>
+              <TextField
+                placeholder="Add Tag (Press Enter)"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => handleAddArrayItem(e, "tags")}
+                fullWidth
+                size="small"
+                sx={textFieldStyles}
+              />
             </Box>
 
+            {/* Features */}
             <Box>
-              <Typography
-                variant="body2"
-                sx={{ mb: 1, fontWeight: 600, color: "#2E7D32" }}
-              >
-                Features
-              </Typography>
-              {features.length > 0 && (
-                <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
-                  {features.map((f, idx) => (
-                    <Chip
-                      key={f + idx}
-                      label={f}
-                      size="small"
-                      onDelete={() => removeFeature(idx)}
-                      color="primary"
-                      variant="outlined"
-                      sx={{ m: 0.5 }}
-                    />
-                  ))}
-                </Stack>
-              )}
-              <Stack direction="row" spacing={1}>
-                <TextField
-                  size="small"
-                  placeholder="Add feature and press Enter"
-                  value={featureInput}
-                  onChange={(e) => setFeatureInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addFeature(featureInput);
-                    }
-                  }}
-                  fullWidth
-                  sx={textFieldStyles}
-                />
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => addFeature(featureInput)}
-                >
-                  Add
-                </Button>
+              <Stack direction="row" spacing={1} flexWrap="wrap" mb={1}>
+                {features.map((f, i) => (
+                  <Chip
+                    key={i}
+                    label={f}
+                    onDelete={() => handleRemoveArrayItem(i, "features")}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                  />
+                ))}
               </Stack>
+              <TextField
+                placeholder="Add Feature (Press Enter)"
+                value={featureInput}
+                onChange={(e) => setFeatureInput(e.target.value)}
+                onKeyDown={(e) => handleAddArrayItem(e, "features")}
+                fullWidth
+                size="small"
+                sx={textFieldStyles}
+              />
             </Box>
 
-            <Controller
-              name="status"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  select
-                  label="Status"
-                  fullWidth
-                  size="small"
-                  sx={textFieldStyles}
-                >
-                  <MenuItem value="draft">Draft</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem valueValue="inactive">Inactive</MenuItem>
-                </TextField>
-              )}
-            />
-
-            <Stack direction="row" spacing={2}>
-              <Controller
-                name="featured"
-                control={control}
-                render={({ field }) => (
-                  <FormControlLabel
-                    control={
-                      <Switch {...field} checked={!!field.value} size="small" />
-                    }
-                    label="Featured"
+            {/* Switches */}
+            <Stack direction="row" spacing={3}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={watch("featured")}
+                    onChange={(e) => setValue("featured", e.target.checked)}
                   />
-                )}
+                }
+                label="Featured"
               />
-              <Controller
-                name="trending"
-                control={control}
-                render={({ field }) => (
-                  <FormControlLabel
-                    control={
-                      <Switch {...field} checked={!!field.value} size="small" />
-                    }
-                    label="Trending"
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={watch("trending")}
+                    onChange={(e) => setValue("trending", e.target.checked)}
                   />
-                )}
+                }
+                label="Trending"
               />
-              {/* --- CHANGE: Added Best Offer Switch --- */}
-              <Controller
-                name="isBestOffer"
-                control={control}
-                render={({ field }) => (
-                  <FormControlLabel
-                    control={
-                      <Switch {...field} checked={!!field.value} size="small" />
-                    }
-                    label="Best Offer"
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={watch("isBestOffer")}
+                    onChange={(e) => setValue("isBestOffer", e.target.checked)}
                   />
-                )}
+                }
+                label="Best Offer"
               />
-              {/* --- END CHANGE --- */}
             </Stack>
           </Stack>
         </Box>
@@ -795,25 +522,18 @@ export default function ProductForm({
         sx={submitButtonStyles}
         disabled={submitting}
       >
-        {submitting
-          ? isEdit
-            ? "Updating..."
-            : "Saving..."
-          : isEdit
-          ? "Update Product"
-          : "Create Product"}
+        {isEdit ? "Update Product" : "Create Product"}
       </Button>
     </DialogActions>
   );
 
-  if (embedded) {
+  if (embedded)
     return (
       <>
         {formInner}
         {actions}
       </>
     );
-  }
 
   return (
     <StyledFormDialog
@@ -821,15 +541,6 @@ export default function ProductForm({
       onClose={onClose || onCancel}
       maxWidth="md"
       fullWidth
-      PaperProps={{
-        sx: {
-          bgcolor: "#fff",
-          borderRadius: 2,
-          overflow: "hidden",
-          boxShadow: "0 12px 48px rgba(76, 175, 80, 0.25)",
-        },
-      }}
-      BackdropProps={{ sx: { backgroundColor: "rgba(0,0,0,0.55)" } }}
     >
       <Box sx={{ ...formHeaderStyles }}>
         <Stack
@@ -840,10 +551,7 @@ export default function ProductForm({
         >
           <Stack direction="row" alignItems="center" spacing={2}>
             <Inventory2Icon sx={{ fontSize: 24, color: "#fff" }} />
-            <Typography
-              variant="h6"
-              sx={{ fontWeight: 700, fontSize: "20px", color: "#fff" }}
-            >
+            <Typography variant="h6" sx={{ fontWeight: 700, color: "#fff" }}>
               {isEdit ? "Edit Product" : "Add New Product"}
             </Typography>
           </Stack>
@@ -852,30 +560,8 @@ export default function ProductForm({
           </IconButton>
         </Stack>
       </Box>
-
       <Box sx={{ p: 0, bgcolor: "#fff" }}>{formInner}</Box>
       {actions}
     </StyledFormDialog>
   );
 }
-
-ProductForm.propTypes = {
-  initialData: PropTypes.object,
-  onSubmit: PropTypes.func.isRequired,
-  onCancel: PropTypes.func,
-  categories: PropTypes.array,
-  submitting: PropTypes.bool,
-  open: PropTypes.bool,
-  onClose: PropTypes.func,
-  embedded: PropTypes.bool,
-};
-
-ProductForm.defaultProps = {
-  initialData: null,
-  onCancel: () => {},
-  categories: [],
-  submitting: false,
-  open: true,
-  onClose: undefined,
-  embedded: false,
-};

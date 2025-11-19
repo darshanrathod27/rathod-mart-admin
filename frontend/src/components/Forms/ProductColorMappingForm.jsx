@@ -17,21 +17,20 @@ import {
   Grid,
   Avatar,
   Chip,
-  DialogActions, // 1. Import DialogActions
+  DialogActions,
 } from "@mui/material";
 import { Save, Cancel, ColorLens } from "@mui/icons-material";
 import { productService } from "../../services/productService";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
-// 2. Import standard styles
 import {
   formActionsStyles,
   cancelButtonStyles,
   submitButtonStyles,
   textFieldStyles,
 } from "../../theme/FormStyles";
+import FormAutocomplete from "./FormAutocomplete"; // <--- IMPORTED
 
-// same presets you had
 const PRESET_COLORS = [
   { name: "Red", value: "#FF0000" },
   { name: "Green", value: "#00FF00" },
@@ -78,10 +77,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
   } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
-      product:
-        (initialData?.product && initialData?.product?._id) ||
-        initialData?.product ||
-        "",
+      product: initialData?.product?._id || initialData?.product || "",
       colorName: initialData?.colorName || "",
       value: initialData?.value || "#000000",
       status: initialData?.status || "Active",
@@ -90,27 +86,22 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
 
   const colorValue = watch("value");
 
-  // Load ACTIVE products safely (no .filter on non-array)
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
         const res = await productService.getProducts({
-          limit: 1000,
+          limit: 2000,
           status: "active",
         });
-
         let list = [];
         if (Array.isArray(res?.data)) list = res.data;
         else if (Array.isArray(res?.data?.products)) list = res.data.products;
         else if (Array.isArray(res?.products)) list = res.products;
         else if (Array.isArray(res)) list = res;
-
-        // If backend didn't filter, filter here:
         list = (list || []).filter(
           (p) => String(p.status || p.state || "").toLowerCase() === "active"
         );
-
         setProducts(list);
       } catch (e) {
         toast.error(e.message || "Failed to load products");
@@ -134,38 +125,19 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
       animate={{ opacity: 1 }}
     >
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        {/* 3. Add p: 3 wrapper */}
         <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
-          {/* Product */}
-          <FormControl fullWidth error={!!errors.product}>
-            <InputLabel>Product *</InputLabel>
-            <Controller
-              name="product"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  {...field}
-                  label="Product *"
-                  disabled={loading}
-                  sx={textFieldStyles} // 4. Apply style
-                >
-                  <MenuItem value="">
-                    <em>Select Product</em>
-                  </MenuItem>
-                  {(products || []).map((p) => (
-                    <MenuItem key={p._id} value={p._id}>
-                      {p.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              )}
-            />
-            {errors.product && (
-              <FormHelperText>{errors.product.message}</FormHelperText>
-            )}
-          </FormControl>
+          {/* --- UPDATED: Advanced Product Autocomplete --- */}
+          <FormAutocomplete
+            control={control}
+            name="product"
+            label="Product *"
+            options={products}
+            loading={loading}
+            error={!!errors.product}
+            helperText={errors.product?.message}
+            sx={textFieldStyles}
+          />
 
-          {/* Color name */}
           <Controller
             name="colorName"
             control={control}
@@ -177,12 +149,11 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
                 placeholder="e.g., Red, Blue"
                 error={!!errors.colorName}
                 helperText={errors.colorName?.message}
-                sx={textFieldStyles} // 4. Apply style
+                sx={textFieldStyles}
               />
             )}
           />
 
-          {/* Presets */}
           <Paper
             elevation={0}
             sx={{
@@ -204,7 +175,6 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
                 sx={{ ml: "auto" }}
               />
             </Box>
-
             <Grid container spacing={1.5}>
               <AnimatePresence>
                 {PRESET_COLORS.map((c, i) => (
@@ -253,7 +223,6 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
             </Grid>
           </Paper>
 
-          {/* Custom hex + preview */}
           <Paper
             elevation={0}
             sx={{
@@ -298,7 +267,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
                       inputProps={{
                         style: { textTransform: "uppercase", fontWeight: 600 },
                       }}
-                      sx={textFieldStyles} // 4. Apply style
+                      sx={textFieldStyles}
                     />
                   </>
                 )}
@@ -315,18 +284,13 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
             </Box>
           </Paper>
 
-          {/* Status */}
           <FormControl fullWidth error={!!errors.status}>
             <InputLabel>Status *</InputLabel>
             <Controller
               name="status"
               control={control}
               render={({ field }) => (
-                <Select
-                  {...field}
-                  label="Status *"
-                  sx={textFieldStyles} // 4. Apply style
-                >
+                <Select {...field} label="Status *" sx={textFieldStyles}>
                   <MenuItem value="Active">Active</MenuItem>
                   <MenuItem value="Inactive">Inactive</MenuItem>
                 </Select>
@@ -338,7 +302,6 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
           </FormControl>
         </Box>
 
-        {/* 5. Use standard DialogActions */}
         <DialogActions sx={formActionsStyles}>
           <Button
             variant="outlined"
@@ -362,5 +325,4 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
     </Box>
   );
 };
-
 export default ProductColorMappingForm;
