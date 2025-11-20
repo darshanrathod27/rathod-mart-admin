@@ -29,7 +29,7 @@ import {
   submitButtonStyles,
   textFieldStyles,
 } from "../../theme/FormStyles";
-import FormAutocomplete from "./FormAutocomplete"; // <--- IMPORTED
+import FormAutocomplete from "./FormAutocomplete";
 
 const PRESET_COLORS = [
   { name: "Red", value: "#FF0000" },
@@ -54,14 +54,15 @@ const PRESET_COLORS = [
   { name: "Violet", value: "#EE82EE" },
 ];
 
+// --- Validation Schema ---
 const schema = yup.object({
-  product: yup.string().required("Product selection is required"),
-  colorName: yup.string().trim().required("Color name is required"),
+  product: yup.string().required("Product is required"),
+  colorName: yup.string().trim().required("Color Name is required"),
   value: yup
     .string()
-    .required("Color value is required")
-    .matches(/^#[0-9A-F]{6}$/i, "Invalid hex color format"),
-  status: yup.string().oneOf(["Active", "Inactive"]).required(),
+    .required("Color Value is required")
+    .matches(/^#[0-9A-F]{6}$/i, "Invalid hex color format (e.g. #FF0000)"),
+  status: yup.string().required("Status is required"),
 });
 
 const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
@@ -86,6 +87,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
 
   const colorValue = watch("value");
 
+  // Load Products
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -99,6 +101,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
         else if (Array.isArray(res?.data?.products)) list = res.data.products;
         else if (Array.isArray(res?.products)) list = res.products;
         else if (Array.isArray(res)) list = res;
+
         list = (list || []).filter(
           (p) => String(p.status || p.state || "").toLowerCase() === "active"
         );
@@ -114,8 +117,8 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
   }, []);
 
   const pickPreset = (c) => {
-    setValue("value", c.value);
-    setValue("colorName", c.name);
+    setValue("value", c.value, { shouldValidate: true });
+    setValue("colorName", c.name, { shouldValidate: true });
   };
 
   return (
@@ -126,7 +129,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
     >
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
-          {/* --- UPDATED: Advanced Product Autocomplete --- */}
+          {/* Product Selection */}
           <FormAutocomplete
             control={control}
             name="product"
@@ -138,6 +141,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
             sx={textFieldStyles}
           />
 
+          {/* Color Name */}
           <Controller
             name="colorName"
             control={control}
@@ -154,6 +158,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
             )}
           />
 
+          {/* Preset Colors */}
           <Paper
             elevation={0}
             sx={{
@@ -223,6 +228,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
             </Grid>
           </Paper>
 
+          {/* Custom Color Picker */}
           <Paper
             elevation={0}
             sx={{
@@ -284,6 +290,7 @@ const ProductColorMappingForm = ({ initialData, onSubmit, onCancel }) => {
             </Box>
           </Paper>
 
+          {/* Status */}
           <FormControl fullWidth error={!!errors.status}>
             <InputLabel>Status *</InputLabel>
             <Controller

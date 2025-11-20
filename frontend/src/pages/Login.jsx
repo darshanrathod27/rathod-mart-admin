@@ -1,6 +1,6 @@
 // frontend/src/pages/Login.jsx
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
   Card,
@@ -21,20 +21,28 @@ import {
   Lock,
   ShoppingBag,
 } from "@mui/icons-material";
-// import { useAuth } from "../hooks/useAuth"; // 1. REMOVE
-import { useDispatch } from "react-redux"; // 2. ADD
-import { setCredentials } from "../store/authSlice"; // 3. ADD
-import api from "../services/api"; // 4. ADD
+import { useDispatch, useSelector } from "react-redux";
+import { setCredentials } from "../store/authSlice";
+import api from "../services/api";
 import toast from "react-hot-toast";
 
 const Login = () => {
-  const [formData, setFormData] = useState({ userId: "", password: "" });
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // const { login } = useAuth(); // 5. REMOVE
+
   const navigate = useNavigate();
-  const dispatch = useDispatch(); // 6. ADD
+  const location = useLocation();
+  const dispatch = useDispatch();
+
+  // If user is already logged in, redirect them away from login page
+  const { isAuthenticated } = useSelector((state) => state.auth);
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/");
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,24 +50,27 @@ const Login = () => {
     setError("");
 
     try {
-      // 7. *** CHANGED: Call admin-login endpoint ***
+      // Call the updated admin login endpoint
       const res = await api.post("/users/admin-login", {
-        email: formData.userId,
+        email: formData.email,
         password: formData.password,
       });
 
-      // 8. Super admin check is now handled by backend
-      // We just dispatch credentials on success
-      dispatch(setCredentials(res.data)); // 9. Dispatch user info to Redux
-      toast.success("Welcome back, Admin!");
-      navigate("/");
+      // Dispatch user info to Redux
+      dispatch(setCredentials(res.data));
+
+      toast.success(`Welcome back, ${res.data.name}!`);
+
+      // Navigate to where they wanted to go, or home
+      const from = location.state?.from?.pathname || "/";
+      navigate(from, { replace: true });
     } catch (err) {
-      // 10. Handle errors from the API
       const msg = err.response?.data?.message || err.message || "Login failed.";
       setError(msg);
       toast.error(msg);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleChange = (e) => {
@@ -70,7 +81,6 @@ const Login = () => {
     if (error) setError("");
   };
 
-  // ... (rest of the JSX is identical)
   return (
     <Box
       sx={{
@@ -81,9 +91,11 @@ const Login = () => {
         alignItems: "center",
         justifyContent: "center",
         padding: 2,
+        position: "relative",
+        overflow: "hidden",
       }}
     >
-      {/* ... (Animated Background) ... */}
+      {/* Animated Background Particles */}
       <Box
         sx={{
           position: "absolute",
@@ -91,7 +103,6 @@ const Login = () => {
           left: 0,
           right: 0,
           bottom: 0,
-          overflow: "hidden",
           zIndex: 0,
         }}
       >
@@ -137,12 +148,7 @@ const Login = () => {
             }}
           >
             <CardContent sx={{ p: 4 }}>
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.3, duration: 0.5 }}
-                style={{ textAlign: "center", marginBottom: "2rem" }}
-              >
+              <Box sx={{ textAlign: "center", mb: 4 }}>
                 <Box
                   sx={{
                     display: "flex",
@@ -164,115 +170,91 @@ const Login = () => {
                   </Typography>
                 </Box>
                 <Typography variant="h6" color="text.secondary">
-                  Admin Panel Login
+                  Admin & Staff Login
                 </Typography>
-              </motion.div>
+              </Box>
 
               {error && (
-                <motion.div
-                  initial={{ opacity: 0, x: -50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                    {error}
-                  </Alert>
-                </motion.div>
+                <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                  {error}
+                </Alert>
               )}
 
               <Box component="form" onSubmit={handleSubmit} noValidate>
-                <motion.div
-                  initial={{ opacity: 0, x: -50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.4, duration: 0.5 }}
-                >
-                  <TextField
-                    margin="normal"
-                    required
-                    fullWidth
-                    id="userId"
-                    label="Email Address" // Changed label
-                    name="userId"
-                    autoComplete="email" // Changed autocomplete
-                    autoFocus
-                    value={formData.userId}
-                    onChange={handleChange}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Person color="primary" />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{ mb: 2 }}
-                  />
-                </motion.div>
+                <TextField
+                  margin="normal"
+                  required
+                  fullWidth
+                  id="email"
+                  label="Email Address"
+                  name="email"
+                  autoComplete="email"
+                  autoFocus
+                  value={formData.email}
+                  onChange={handleChange}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Person color="primary" />
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 2 }}
+                />
 
-                <motion.div
-                  initial={{ opacity: 0, x: -50 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5, duration: 0.5 }}
-                >
-                  <TextField
-                    margin="normal"
-                    required
-                    fullWidth
-                    name="password"
-                    label="Password"
-                    type={showPassword ? "text" : "password"}
-                    id="password"
-                    autoComplete="current-password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Lock color="primary" />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            aria-label="toggle password visibility"
-                            onClick={() => setShowPassword(!showPassword)}
-                            edge="end"
-                          >
-                            {showPassword ? <VisibilityOff /> : <Visibility />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{ mb: 3 }}
-                  />
-                </motion.div>
+                <TextField
+                  margin="normal"
+                  required
+                  fullWidth
+                  name="password"
+                  label="Password"
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  autoComplete="current-password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Lock color="primary" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle password visibility"
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                        >
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 3 }}
+                />
 
-                <motion.div
-                  initial={{ opacity: 0, y: 50 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.6, duration: 0.5 }}
+                <Button
+                  type="submit"
+                  fullWidth
+                  variant="contained"
+                  disabled={loading}
+                  sx={{
+                    mt: 1,
+                    mb: 2,
+                    py: 1.5,
+                    fontSize: "1.1rem",
+                    background: loading
+                      ? "linear-gradient(135deg, #81C784 0%, #A5D6A7 100%)"
+                      : "linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%)",
+                    "&:hover": {
+                      background:
+                        "linear-gradient(135deg, #388E3C 0%, #4CAF50 100%)",
+                    },
+                  }}
                 >
-                  <Button
-                    type="submit"
-                    fullWidth
-                    variant="contained"
-                    disabled={loading}
-                    sx={{
-                      mt: 1,
-                      mb: 2,
-                      py: 1.5,
-                      fontSize: "1.1rem",
-                      background: loading
-                        ? "linear-gradient(135deg, #81C784 0%, #A5D6A7 100%)"
-                        : "linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%)",
-                      "&:hover": {
-                        background:
-                          "linear-gradient(135deg, #388E3C 0%, #4CAF50 100%)",
-                      },
-                    }}
-                  >
-                    {loading ? "Signing In..." : "Sign In"}
-                  </Button>
-                </motion.div>
+                  {loading ? "Signing In..." : "Sign In"}
+                </Button>
               </Box>
             </CardContent>
           </Card>

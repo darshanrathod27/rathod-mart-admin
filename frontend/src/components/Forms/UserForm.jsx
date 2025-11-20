@@ -17,6 +17,7 @@ import {
   MenuItem,
   Grid,
   Divider,
+  FormHelperText,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import SaveIcon from "@mui/icons-material/Save";
@@ -26,8 +27,13 @@ import PersonIcon from "@mui/icons-material/Person";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import HomeIcon from "@mui/icons-material/Home";
+
+// Validation Imports
 import { useForm, Controller } from "react-hook-form";
+import { yupResolver } from "@hookform/resolvers/yup";
+import * as yup from "yup";
 import { useDropzone } from "react-dropzone";
+
 import {
   StyledFormDialog,
   formHeaderStyles,
@@ -41,6 +47,40 @@ import {
 import { createUser, updateUser } from "../../services/userService";
 import toast from "react-hot-toast";
 
+// --- Validation Schema ---
+const schema = yup.object({
+  name: yup.string().trim().required("Full Name is required"),
+  username: yup.string().trim().optional(),
+  email: yup
+    .string()
+    .trim()
+    .email("Invalid email format")
+    .required("Email is required"),
+  phone: yup.string().trim().optional(),
+  birthday: yup.string().nullable(),
+  role: yup.string().required("Role is required"),
+  status: yup.string().required("Status is required"),
+  // Password: Min 6 chars. If it's an edit and field is empty, it's valid (ignored).
+  password: yup
+    .string()
+    .transform((x) => (x === "" ? undefined : x))
+    .min(6, "Password must be at least 6 characters")
+    .when("$isEdit", (isEdit, schema) => {
+      // If not edit (Create mode), password is required
+      return isEdit
+        ? schema.optional()
+        : schema.required("Password is required");
+    }),
+  // Nested Address Object
+  address: yup.object({
+    street: yup.string().optional(),
+    city: yup.string().optional(),
+    state: yup.string().optional(),
+    postalCode: yup.string().optional(),
+    country: yup.string().optional(),
+  }),
+});
+
 export default function UserForm({
   open = true,
   initialData,
@@ -48,7 +88,7 @@ export default function UserForm({
   onSaved,
   embedded = false,
 }) {
-  const isEdit = Boolean(initialData);
+  const isEdit = Boolean(initialData && initialData._id);
 
   // Format date for input type=date (YYYY-MM-DD)
   const formatDateForInput = (date) => {
@@ -60,7 +100,14 @@ export default function UserForm({
     }
   };
 
-  const { register, control, handleSubmit, reset } = useForm({
+  const {
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: yupResolver(schema),
+    context: { isEdit }, // Pass context to yup for password validation
     defaultValues: {
       name: initialData?.name || "",
       username: initialData?.username || "",
@@ -83,6 +130,7 @@ export default function UserForm({
   const [preview, setPreview] = useState(initialData?.profileImage || null);
   const [fileBlob, setFileBlob] = useState(null);
 
+  // Reset form when initialData changes
   useEffect(() => {
     reset({
       name: initialData?.name || "",
@@ -105,6 +153,7 @@ export default function UserForm({
     setFileBlob(null);
   }, [initialData, reset]);
 
+  // Image Drop Handler
   const onDrop = useCallback((acceptedFiles) => {
     if (!acceptedFiles?.[0]) return;
     const f = acceptedFiles[0];
@@ -123,10 +172,11 @@ export default function UserForm({
     setFileBlob(null);
   };
 
+  // Submit Handler
   const internalSubmit = async (values) => {
     const fd = new FormData();
 
-    // Append all top-level values
+    // Append top-level values
     fd.append("name", values.name);
     fd.append("email", values.email);
     fd.append("role", values.role);
@@ -146,7 +196,7 @@ export default function UserForm({
     }
 
     if (fileBlob) {
-      fd.append("image", fileBlob); // 'image' is the field name from middleware
+      fd.append("image", fileBlob);
     }
 
     try {
@@ -157,7 +207,7 @@ export default function UserForm({
         await createUser(fd);
         toast.success("User created successfully");
       }
-      onSaved?.(); // Call the onSaved prop
+      onSaved?.();
     } catch (e) {
       toast.error(e.message || "Operation failed");
     }
@@ -165,7 +215,7 @@ export default function UserForm({
 
   const inner = (
     <Box sx={{ p: 3 }}>
-      <Box component="form" onSubmit={handleSubmit(internalSubmit)}>
+      <Box component="form" onSubmit={handleSubmit(internalSubmit)} noValidate>
         {/* --- Profile Picture Section --- */}
         <Box sx={{ ...fieldContainerStyles, mb: "24px" }}>
           <Typography sx={sectionHeaderStyles}>
@@ -285,50 +335,90 @@ export default function UserForm({
         </Typography>
         <Grid container spacing={2} sx={{ mb: 2 }}>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Full Name"
-              placeholder="Enter full name"
-              {...register("name")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="name"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Full Name"
+                  placeholder="Enter full name"
+                  fullWidth
+                  error={!!errors.name}
+                  helperText={errors.name?.message}
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Username"
-              placeholder="e.g. @darshan"
-              {...register("username")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="username"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Username"
+                  placeholder="e.g. @darshan"
+                  fullWidth
+                  error={!!errors.username}
+                  helperText={errors.username?.message}
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Email Address"
-              type="email"
-              placeholder="user@example.com"
-              {...register("email")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="email"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Email Address"
+                  type="email"
+                  placeholder="user@example.com"
+                  fullWidth
+                  error={!!errors.email}
+                  helperText={errors.email?.message}
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Phone Number"
-              placeholder="+91 99999 99999"
-              {...register("phone")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="phone"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Phone Number"
+                  placeholder="+91 99999 99999"
+                  fullWidth
+                  error={!!errors.phone}
+                  helperText={errors.phone?.message}
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Birthday"
-              type="date"
-              {...register("birthday")}
-              fullWidth
-              sx={textFieldStyles}
-              InputLabelProps={{ shrink: true }}
+            <Controller
+              name="birthday"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Birthday"
+                  type="date"
+                  fullWidth
+                  error={!!errors.birthday}
+                  helperText={errors.birthday?.message}
+                  sx={textFieldStyles}
+                  InputLabelProps={{ shrink: true }}
+                />
+              )}
             />
           </Grid>
         </Grid>
@@ -342,48 +432,78 @@ export default function UserForm({
         </Typography>
         <Grid container spacing={2} sx={{ mb: 2 }}>
           <Grid item xs={12}>
-            <TextField
-              label="Street Address"
-              placeholder="123 Main St"
-              {...register("address.street")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="address.street"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Street Address"
+                  placeholder="123 Main St"
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="City"
-              placeholder="Surat"
-              {...register("address.city")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="address.city"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="City"
+                  placeholder="Surat"
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="State"
-              placeholder="Gujarat"
-              {...register("address.state")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="address.state"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="State"
+                  placeholder="Gujarat"
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Postal Code"
-              placeholder="395001"
-              {...register("address.postalCode")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="address.postalCode"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Postal Code"
+                  placeholder="395001"
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label="Country"
-              placeholder="India"
-              {...register("address.country")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="address.country"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Country"
+                  placeholder="India"
+                  fullWidth
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
         </Grid>
@@ -394,7 +514,12 @@ export default function UserForm({
         <Typography sx={sectionHeaderStyles}>Access & Security</Typography>
         <Grid container spacing={2}>
           <Grid item xs={12} md={6}>
-            <FormControl fullWidth size="medium" sx={textFieldStyles}>
+            <FormControl
+              fullWidth
+              size="medium"
+              sx={textFieldStyles}
+              error={!!errors.role}
+            >
               <InputLabel id="role-label">User Role</InputLabel>
               <Controller
                 name="role"
@@ -408,10 +533,18 @@ export default function UserForm({
                   </Select>
                 )}
               />
+              {errors.role && (
+                <FormHelperText>{errors.role.message}</FormHelperText>
+              )}
             </FormControl>
           </Grid>
           <Grid item xs={12} md={6}>
-            <FormControl fullWidth size="medium" sx={textFieldStyles}>
+            <FormControl
+              fullWidth
+              size="medium"
+              sx={textFieldStyles}
+              error={!!errors.status}
+            >
               <InputLabel id="status-label">Status</InputLabel>
               <Controller
                 name="status"
@@ -424,20 +557,33 @@ export default function UserForm({
                   </Select>
                 )}
               />
+              {errors.status && (
+                <FormHelperText>{errors.status.message}</FormHelperText>
+              )}
             </FormControl>
           </Grid>
           <Grid item xs={12} md={6}>
-            <TextField
-              label={
-                isEdit ? "Password (Leave blank to keep current)" : "Password"
-              }
-              type="password"
-              placeholder={
-                isEdit ? "Leave blank to keep current" : "Enter password"
-              }
-              {...register("password")}
-              fullWidth
-              sx={textFieldStyles}
+            <Controller
+              name="password"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label={
+                    isEdit
+                      ? "Password (Leave blank to keep current)"
+                      : "Password *"
+                  }
+                  type="password"
+                  placeholder={
+                    isEdit ? "Leave blank to keep current" : "Enter password"
+                  }
+                  fullWidth
+                  error={!!errors.password}
+                  helperText={errors.password?.message}
+                  sx={textFieldStyles}
+                />
+              )}
             />
           </Grid>
         </Grid>
@@ -460,8 +606,9 @@ export default function UserForm({
         variant="contained"
         startIcon={<SaveIcon />}
         sx={submitButtonStyles}
+        disabled={isSubmitting}
       >
-        {isEdit ? "Update User" : "Create User"}
+        {isSubmitting ? "Saving..." : isEdit ? "Update User" : "Create User"}
       </Button>
     </DialogActions>
   );

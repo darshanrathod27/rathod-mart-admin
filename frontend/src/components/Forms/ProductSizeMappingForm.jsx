@@ -24,16 +24,14 @@ import {
   submitButtonStyles,
   textFieldStyles,
 } from "../../theme/FormStyles";
-import FormAutocomplete from "./FormAutocomplete"; // <--- IMPORTED
+import FormAutocomplete from "./FormAutocomplete";
 
-const sizeMappingSchema = yup.object({
-  product: yup.string().trim().required("Product selection is required"),
-  sizeName: yup.string().trim().required("Size name is required"),
-  value: yup.string().trim().required("Size value is required"),
-  status: yup
-    .string()
-    .oneOf(["Active", "Inactive"], "Invalid status")
-    .required("Status is required"),
+// --- Validation Schema ---
+const schema = yup.object({
+  product: yup.string().required("Product is required"),
+  sizeName: yup.string().trim().required("Size Name is required"),
+  value: yup.string().trim().required("Size Value is required"),
+  status: yup.string().required("Status is required"),
 });
 
 const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
@@ -46,7 +44,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
     setValue,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: yupResolver(sizeMappingSchema),
+    resolver: yupResolver(schema),
     defaultValues: {
       product: initialData?.product?._id || initialData?.product || "",
       sizeName: initialData?.sizeName || "",
@@ -55,6 +53,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
     },
   });
 
+  // Load Products
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -63,12 +62,12 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
           limit: 2000,
           status: "active",
         });
-        // Safe extraction logic from your code
         let list = [];
         if (Array.isArray(res?.data)) list = res.data;
         else if (Array.isArray(res?.data?.products)) list = res.data.products;
         else if (Array.isArray(res?.products)) list = res.products;
         else if (Array.isArray(res)) list = res;
+
         list = (list || []).filter(
           (p) => String(p.status || p.state || "").toLowerCase() === "active"
         );
@@ -83,14 +82,15 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
     fetchProducts();
   }, []);
 
-  // Initial data sync logic from your code
+  // Sync Initial Data
   useEffect(() => {
     if (!initialData) return;
-    if (initialData.product)
+    if (initialData.product) {
       setValue(
         "product",
         (initialData.product && initialData.product._id) || initialData.product
       );
+    }
     if (initialData.sizeName) setValue("sizeName", initialData.sizeName);
     if (initialData.value) setValue("value", initialData.value);
     if (initialData.status) setValue("status", initialData.status);
@@ -105,11 +105,11 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
     >
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
+          {/* Product Selection */}
           <motion.div
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
           >
-            {/* --- UPDATED: Advanced Product Search --- */}
             <FormAutocomplete
               control={control}
               name="product"
@@ -122,6 +122,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
             />
           </motion.div>
 
+          {/* Size Name */}
           <motion.div
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
@@ -135,7 +136,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
                   {...field}
                   fullWidth
                   label="Size Name"
-                  placeholder="Small / Medium"
+                  placeholder="e.g. Small, Medium, Large"
                   error={!!errors.sizeName}
                   helperText={errors.sizeName?.message}
                   sx={textFieldStyles}
@@ -144,6 +145,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
             />
           </motion.div>
 
+          {/* Size Value */}
           <motion.div
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
@@ -157,7 +159,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
                   {...field}
                   fullWidth
                   label="Size Value"
-                  placeholder="S / M"
+                  placeholder="e.g. S, M, L, XL"
                   error={!!errors.value}
                   helperText={errors.value?.message}
                   sx={textFieldStyles}
@@ -166,6 +168,7 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
             />
           </motion.div>
 
+          {/* Status */}
           <motion.div
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
@@ -182,6 +185,9 @@ const ProductSizeMappingForm = ({ initialData, onSubmit, onCancel }) => {
                   </Select>
                 )}
               />
+              {errors.status && (
+                <FormHelperText>{errors.status.message}</FormHelperText>
+              )}
             </FormControl>
           </motion.div>
         </Box>

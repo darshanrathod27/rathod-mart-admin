@@ -1,10 +1,11 @@
 // frontend/src/App.jsx
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -22,13 +23,26 @@ const ProductSizeMapping = lazy(() => import("./pages/ProductSizeMapping"));
 const ProductColorMapping = lazy(() => import("./pages/ProductColorMapping"));
 const VariantMaster = lazy(() => import("./pages/VariantMaster"));
 const InventoryMaster = lazy(() => import("./pages/InventoryMaster"));
-// --- 1. ADD THIS IMPORT ---
 const PromocodeMaster = lazy(() => import("./pages/PromocodeMaster"));
 
-// Protected Route Component
+// --- Protected Route Component ---
+// Checks Redux state. If not authenticated, redirects to /login
 function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useSelector((state) => state.auth);
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  const { isAuthenticated, status } = useSelector((state) => state.auth);
+  const location = useLocation();
+
+  // While the app is checking auth status (on first load), show a loader
+  // This prevents kicking the user out while the cookie check is pending
+  if (status === "loading" || status === "idle") {
+    return <div>Loading Authentication...</div>;
+  }
+
+  if (!isAuthenticated) {
+    // Redirect them to the login page, but save the current location they were trying to go to
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return children;
 }
 
 function App() {
@@ -40,24 +54,9 @@ function App() {
           position="top-right"
           toastOptions={{
             duration: 3000,
-            style: {
-              background: "#363636",
-              color: "#fff",
-            },
-            success: {
-              duration: 3000,
-              iconTheme: {
-                primary: "#4CAF50",
-                secondary: "#fff",
-              },
-            },
-            error: {
-              duration: 4000,
-              iconTheme: {
-                primary: "#f44336",
-                secondary: "#fff",
-              },
-            },
+            style: { background: "#363636", color: "#fff" },
+            success: { iconTheme: { primary: "#4CAF50", secondary: "#fff" } },
+            error: { iconTheme: { primary: "#f44336", secondary: "#fff" } },
           }}
         />
         <Suspense fallback={<div>Loading...</div>}>
@@ -65,7 +64,7 @@ function App() {
             {/* Login Route */}
             <Route path="/login" element={<Login />} />
 
-            {/* Protected Routes */}
+            {/* Protected Admin Routes */}
             <Route
               path="/"
               element={
@@ -74,7 +73,9 @@ function App() {
                 </ProtectedRoute>
               }
             >
+              {/* Default redirect to Users page */}
               <Route index element={<Navigate to="/users" replace />} />
+
               <Route path="users" element={<Users />} />
               <Route path="categories" element={<Categories />} />
               <Route path="products" element={<Products />} />
@@ -88,8 +89,6 @@ function App() {
               />
               <Route path="variant-master" element={<VariantMaster />} />
               <Route path="inventory" element={<InventoryMaster />} />
-
-              {/* --- 2. ADD THIS NEW ROUTE --- */}
               <Route path="promocodes" element={<PromocodeMaster />} />
             </Route>
 
